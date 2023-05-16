@@ -2,6 +2,8 @@
   "files.associations": {
     "unistd.h": "c",
     "tlpi_hdr.h": "c",
-    "stdlib.h": "c"
+    "stdlib.h": "c",
+    "signal.h": "c",
+    "ucontext.h": "c"
   }
 }
