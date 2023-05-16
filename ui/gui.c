@@ -7,17 +7,17 @@ pid_t create_gui()
 
   switch (gui_pid = fork()) {
     case -1:
-      perror("web_server fork error");
+      perror("gui fork error");
       exit(-1);
     case 0:
       if (prctl(PR_SET_NAME, process_name) < 0) {
         perror("prctl error");
         exit(-1);
       }
-      execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "localhost:8888", NULL);
+      execl("/usr/bin/chromium-browser", "chromium-browser", NULL);
       break;
     default:
-      printf("web_server pid: %d\n", gui_pid);
+      printf("gui pid: %d\n", gui_pid);
   }
 
   return gui_pid;

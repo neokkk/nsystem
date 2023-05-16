@@ -5,7 +5,6 @@ int system_server()
   printf("system_server process is running\n");
 
   while (1) {
-    printf("loop");
     sleep(1);
   }
 
