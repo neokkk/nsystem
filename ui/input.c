@@ -1,28 +1,35 @@
-#include <stdio.h>
-#include <sys/prctl.h>
-
-#include <system_server.h>
-#include <gui.h>
 #include <input.h>
-#include <web_server.h>
 
 int input()
 {
-  printf("나 input 프로세스!\n");
+  printf("input process is running!\n");
 
   while (1) {
     sleep(1);
   }
 
-  return 0;
+  exit(0);
 }
 
-int create_input()
+pid_t create_input()
 {
-  pid_t systemPid;
-  const char *name = "input";
+  pid_t input_pid;
+  const char *process_name = "input";
 
-  printf("여기서 input 프로세스를 생성합니다.\n");
+  switch (input_pid = fork()) {
+    case -1:
+      perror("input fork error");
+      exit(-1);
+    case 0:
+      if (prctl(PR_SET_NAME, process_name) < 0) {
+        perror("prctl error");
+        exit(-1);
+      }
+      input();
+      break;
+    default:
+      printf("input pid: %d\n", input_pid);
+  }
 
-  return 0;
+  return input_pid;
 }

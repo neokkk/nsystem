@@ -1,15 +1,24 @@
-#include <stdio.h>
-
-#include <system_server.h>
 #include <gui.h>
-#include <input.h>
-#include <web_server.h>
 
-int create_gui()
+pid_t create_gui()
 {
-  pid_t systemPid;
+  pid_t gui_pid;
+  const char* process_name = "gui";
 
-  printf("여기서 GUI 프로세스를 생성합니다.\n");
+  switch (gui_pid = fork()) {
+    case -1:
+      perror("web_server fork error");
+      exit(-1);
+    case 0:
+      if (prctl(PR_SET_NAME, process_name) < 0) {
+        perror("prctl error");
+        exit(-1);
+      }
+      execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "localhost:8888", NULL);
+      break;
+    default:
+      printf("web_server pid: %d\n", gui_pid);
+  }
 
-  return 0;
+  return gui_pid;
 }
