@@ -1,51 +1,30 @@
 #define _POSIX_C_SOURCE 200809L
 #define THREAD_NUM 4
+#define BUFSIZE 1024
+#define DISK_USAGE "df -H ./"
 #include <system_server.h>
 
 static int toy_timer = 0;
+pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t system_loop_cond = PTHREAD_COND_INITIALIZER;
+bool system_loop_exit = true;
 
 static void sigalrm_handler(int sig, siginfo_t *si, void *uc)
 {
-  printf("toy_timer: %d\n", toy_timer);
   toy_timer++;
+  signal_exit();
 }
 
-// void set_periodic_timer(long sec_delay, long usec_delay)
-// {
-//   timer_t timerid;
-//   printf("set periodic timer\n");
+int posix_sleep_ms(unsigned int timeout_ms)
+{
+  struct timespec sleep_time;
 
-//   struct sigevent sev = {
-//     .sigev_notify = SIGEV_SIGNAL,
-//     .sigev_signo = SIGALRM,
-//     .sigev_value = {
-//       .sival_ptr = &timerid,
-//     },
-//   };
+  sleep_time.tv_sec = timeout_ms / 1000;
+  sleep_time.tv_nsec = (timeout_ms % 1000) * 1000000;
+  printf("sleep\n");
 
-//   if (timer_create(CLOCK_REALTIME, &sev, &timerid) < 0) {
-//     perror("timer_create error");
-//     exit(-1);
-//   }
-
-//   struct itimerspec ts = {
-//     .it_value = {
-//       .tv_sec = 5,
-//       .tv_nsec = 0,
-//     },
-//     .it_interval = {
-//       .tv_sec = 5,
-//       .tv_nsec = 0,
-//     },
-//   };
-
-//   if (timer_settime(timerid, 0, &ts, NULL) < 0) {
-//     perror("timer_settime error");
-//     exit(-1);
-//   }
-
-//   exit(EXIT_SUCCESS);
-// }
+  return nanosleep(&sleep_time, NULL);
+}
 
 void* watchdog_thread(void* arg) {
   int thread_id = (int)arg;
@@ -72,9 +51,24 @@ void* monitor_thread(void* arg) {
 void* disk_service_thread(void* arg) {
   int thread_id = (int)arg;
   printf("thread %d is running\n", thread_id);
+  FILE* fd;
+  char buf[BUFSIZE];
 
   while (1) {
-    sleep(1);
+    if ((fd = popen(DISK_USAGE, "r")) == NULL) {
+      perror("popen error");
+      exit(-1);
+    }
+
+    while (fgets(buf, BUFSIZE, fd) != NULL) {
+      printf("%s", buf);
+    }
+
+    if (pclose(fd) < 0) {
+      perror("pclose error");
+      exit(-1);
+    }
+    posix_sleep_ms(10000);
   }
 
   exit(EXIT_SUCCESS);
@@ -99,6 +93,14 @@ void set_periodic_timer(long sec_delay, long usec_delay)
   };
 
 	setitimer(ITIMER_REAL, &itimer_val, (struct itimerval*)0);
+}
+
+void signal_exit()
+{
+  pthread_mutex_lock(&system_loop_mutex);
+  system_loop_exit = true;
+  pthread_cond_signal(&system_loop_cond);
+  pthread_mutex_unlock(&system_loop_mutex);
 }
 
 int system_server()
@@ -126,6 +128,14 @@ int system_server()
       exit(-1);
     }
   }
+
+  pthread_mutex_lock(&system_loop_mutex);
+  while (!system_loop_exit) {
+    pthread_cond_wait(&system_loop_cond, &system_loop_mutex);
+  }
+  pthread_mutex_unlock(&system_loop_mutex);
+
+  printf("wakeup!\n");
 
   while (1) {
     sleep(1);
