@@ -1,6 +1,7 @@
 #ifndef _INPUT_H
 #define _INPUT_H
 
+#include <assert.h>
 #include <errno.h>
 #include <execinfo.h>
 #include <pthread.h>
@@ -13,23 +14,24 @@
 #include <sys/types.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <wait.h>
 #include <toy_message.h>
 
 pid_t create_input();
 int input();
 
-void* sensor_thread(void* arg);
-void* command_thread(void* arg);
-void toy_loop();
+static void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext);
+int toy_num_builtins();
+int toy_send(char** args);
+int toy_mutex(char** args);
+int toy_message_queue(char** args);
+int toy_exit(char** args);
+int toy_shell(char** args);
+int toy_execute(char** args);
 char** toy_split_line(char* line);
 char* toy_read_line(void);
-int toy_execute(char** args);
-int toy_shell(char** args);
-int toy_exit(char** args);
-int toy_message_queue(char** args);
-int toy_mutex(char** args);
-int toy_send(char** args);
-int toy_num_builtins();
-void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext);
+void toy_loop();
+void* sensor_thread(void* arg);
+void* command_thread(void* arg);
 
 #endif /* _INPUT_H */

@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define QUEUE_NUM 4
 #define PROCESS_NUM 4
 #include <main.h>
 
@@ -49,15 +50,10 @@ int create_message_queue(mqd_t* msgq_ptr, const char* queue_name, int num_messag
 
 int main()
 {
-  char* WATCHDOG_QUEUE = "/watchdog_queue";
-  char* MONITOR_QUEUE = "/monitor_queue";
-  char* DISK_QUEUE = "/disk_queue";
-  char* CAMERA_QUEUE = "/camera_queue";
-
   pid_t pids[PROCESS_NUM];
   pid_t (*funcs[PROCESS_NUM])() = {create_system_server, create_web_server, create_input, create_gui};
-  mqd_t mqs[THREAD_NUM];
-  char* mq_names[THREAD_NUM] = {WATCHDOG_QUEUE, MONITOR_QUEUE, DISK_QUEUE, CAMERA_QUEUE};
+  mqd_t mqs[QUEUE_NUM];
+  char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
   int status;
   struct sigaction sa;
 
@@ -81,7 +77,7 @@ int main()
     waitpid(pids[i], NULL, 0);
   }
 
-  for (int i = 0; i < THREAD_NUM; i++) {
+  for (int i = 0; i < QUEUE_NUM; i++) {
     if (create_message_queue(&mqs[i], mq_names[i], 10, sizeof(toy_msg_t)) < 0) {
       perror("create_message_queue error");
       exit(-1);

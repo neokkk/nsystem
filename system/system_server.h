@@ -2,8 +2,10 @@
 #define _SYSTEM_SERVER_H
 
 #include <assert.h>
+#include <errno.h>
 #include <mqueue.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,13 +19,11 @@
 #include <wait.h>
 #include <toy_message.h>
 
-#define THREAD_NUM 4
-
-#define USEC_PER_SECOND         1000000  /* one million */ 
-#define USEC_PER_MILLISEC       1000     /* one thousand */
-#define NANOSEC_PER_SECOND      1000000000 /* one BILLLION */
-#define NANOSEC_PER_USEC        1000     /* one thousand */
-#define NANOSEC_PER_MILLISEC    1000000  /* one million */
+#define USEC_PER_SECOND         1000000
+#define USEC_PER_MILLISEC       1000
+#define NANOSEC_PER_SECOND      1000000000
+#define NANOSEC_PER_USEC        1000
+#define NANOSEC_PER_MILLISEC    1000000
 #define MILLISEC_PER_TICK       10
 #define MILLISEC_PER_SECOND     1000
 
@@ -31,12 +31,13 @@ pid_t create_system_server();
 int system_server();
 
 static void sigalrm_handler(int sig, siginfo_t *si, void *uc);
-int posix_sleep_ms(unsigned int timeout_ms);
+static void system_timeout_handler();
+static void* timer_thread(void* not_used);
 void* watchdog_thread(void* arg);
 void* monitor_thread(void* arg);
 void* disk_service_thread(void* arg);
 void* camera_service_thread(void* arg);
+int posix_sleep_ms(unsigned int timeout_ms);
 void set_periodic_timer(long sec_delay, long usec_delay);
-void signal_exit();
 
 #endif /* _SYSTEM_SERVER_H */

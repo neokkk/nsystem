@@ -17,7 +17,7 @@ static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static char global_message[BUFSIZE];
 
-void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
+static void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
 {
   void* array[50];
   void* caller_address;
@@ -54,7 +54,9 @@ void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
 
 char* builtin_str[] = {
   "send",
+  "mu",
   "sh",
+  "mq",
   "exit"
 };
 
@@ -89,7 +91,7 @@ int toy_mutex(char** args)
     return -1;
   }
   
-  return 1;
+  return 0;
 }
 
 int toy_exit(char** args)
@@ -104,14 +106,13 @@ int toy_shell(char** args)
 
   pid = fork();
   if (pid == 0) {
-    if (execvp(args[0], args) == -1) {
-      perror("toy");
+    if (execvp(args[0], args) < 0) {
+      perror("execvp error");
     }
     exit(-1);
   } else if (pid < 0) {
-    perror("toy");
-  } else
-  {
+    perror("fork error");
+  } else {
     do
     {
       waitpid(pid, &status, WUNTRACED);
@@ -123,7 +124,6 @@ int toy_shell(char** args)
 
 int toy_message_queue(char** args)
 {
-  char* CAMERA_QUEUE = "/camera_queue";
   int mqretcode;
   toy_msg_t msg;
 
@@ -132,21 +132,22 @@ int toy_message_queue(char** args)
   }
 
   if (!strcmp(args[1], "camera")) {
-      msg.msg_type = atoi(args[2]);
-      msg.param1 = 0;
-      msg.param2 = 0;
-      mqretcode = mq_send(CAMERA_QUEUE, (char *)&msg, sizeof(msg), 0);
-      assert(mqretcode == 0);
+    msg.msg_type = atoi(args[2]);
+    msg.param1 = 0;
+    msg.param2 = 0;
+    mqretcode = mq_send("/camera_queue", (void*)&msg, sizeof(msg), 0);
+    assert(mqretcode == 0);
   }
 
-  return 1;
+  return 0;
 }
 
 int (*builtin_func[])(char**) = {
   &toy_send,
+  &toy_mutex,
   &toy_shell,
-  &toy_exit,
   &toy_message_queue,
+  &toy_exit
 };
 
 int toy_execute(char** args)
@@ -165,7 +166,6 @@ int toy_execute(char** args)
 
   return 0;
 }
-
 
 char* toy_read_line(void)
 {
