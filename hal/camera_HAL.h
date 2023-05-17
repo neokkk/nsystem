@@ -5,7 +5,13 @@
 extern "C" {
 #endif  // __cplusplus
 
+#include <cstdio>
+#include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <unistd.h>
 
 int toy_camera_open(void);
 int toy_camera_take_picture(void);

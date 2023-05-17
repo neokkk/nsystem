@@ -7,6 +7,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-int create_gui();
+pid_t create_gui();
 
 #endif /* _GUI_H */

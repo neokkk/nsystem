@@ -7,6 +7,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-int create_web_server();
+pid_t create_web_server();
 
 #endif /* _WEB_SERVER_H */
