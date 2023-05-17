@@ -121,10 +121,32 @@ int toy_shell(char** args)
   return 0;
 }
 
+int toy_message_queue(char** args)
+{
+  char* CAMERA_QUEUE = "/camera_queue";
+  int mqretcode;
+  toy_msg_t msg;
+
+  if (args[1] == NULL || args[2] == NULL) {
+    return 1;
+  }
+
+  if (!strcmp(args[1], "camera")) {
+      msg.msg_type = atoi(args[2]);
+      msg.param1 = 0;
+      msg.param2 = 0;
+      mqretcode = mq_send(CAMERA_QUEUE, (char *)&msg, sizeof(msg), 0);
+      assert(mqretcode == 0);
+  }
+
+  return 1;
+}
+
 int (*builtin_func[])(char**) = {
   &toy_send,
   &toy_shell,
-  &toy_exit
+  &toy_exit,
+  &toy_message_queue,
 };
 
 int toy_execute(char** args)
@@ -258,6 +280,8 @@ pid_t create_input()
 {
   pid_t input_pid;
   const char *process_name = "input";
+
+  printf("입력 프로세스를 생성합니다.\n");
 
   switch (input_pid = fork()) {
     case -1:

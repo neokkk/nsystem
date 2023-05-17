@@ -1,17 +1,31 @@
 #ifndef _SYSTEM_SERVER_H
 #define _SYSTEM_SERVER_H
 
+#include <assert.h>
+#include <mqueue.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/prctl.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 #include <wait.h>
+#include <toy_message.h>
+
+#define THREAD_NUM 4
+
+#define USEC_PER_SECOND         1000000  /* one million */ 
+#define USEC_PER_MILLISEC       1000     /* one thousand */
+#define NANOSEC_PER_SECOND      1000000000 /* one BILLLION */
+#define NANOSEC_PER_USEC        1000     /* one thousand */
+#define NANOSEC_PER_MILLISEC    1000000  /* one million */
+#define MILLISEC_PER_TICK       10
+#define MILLISEC_PER_SECOND     1000
 
 pid_t create_system_server();
 int system_server();

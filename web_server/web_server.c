@@ -5,6 +5,8 @@ pid_t create_web_server()
   pid_t web_pid;
   const char* process_name = "web_server";
 
+  printf("웹 서버를 생성합니다.\n");
+
   switch (web_pid = fork()) {
     case -1:
       perror("web_server fork error");

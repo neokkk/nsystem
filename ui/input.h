@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <toy_message.h>
 
 pid_t create_input();
 int input();
@@ -25,6 +26,7 @@ char* toy_read_line(void);
 int toy_execute(char** args);
 int toy_shell(char** args);
 int toy_exit(char** args);
+int toy_message_queue(char** args);
 int toy_mutex(char** args);
 int toy_send(char** args);
 int toy_num_builtins();

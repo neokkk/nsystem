@@ -5,6 +5,8 @@ pid_t create_gui()
   pid_t gui_pid;
   const char* process_name = "gui";
 
+  printf("GUI를 생성합니다.\n");
+
   switch (gui_pid = fork()) {
     case -1:
       perror("gui fork error");

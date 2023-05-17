@@ -5,7 +5,7 @@ UI = ./ui
 WEB_SERVER = ./web_server
 HAL = ./hal
 
-INCLUDES = -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL)
+INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL)
 
 CC = gcc
 CXX = g++
@@ -21,7 +21,7 @@ $(TARGET): $(objects) $(cxx_objects)
 main.o:  main.c
 	$(CC) -g $(INCLUDES) -c main.c
 
-system_server.o: $(SYSTEM)/system_server.h $(SYSTEM)/system_server.c
+system_server.o: $(SYSTEM)/system_server.h toy_message.h $(SYSTEM)/system_server.c
 	$(CC) -g $(INCLUDES) -c ./system/system_server.c
 
 gui.o: $(UI)/gui.h $(UI)/gui.c

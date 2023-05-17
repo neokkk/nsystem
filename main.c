@@ -1,11 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
-// #include <input.h>
-#include <gui.h>
-#include <system_server.h>
-#include <web_server.h>
-#include <errno.h>
-#include <signal.h>
-#include <sys/wait.h>
+#define PROCESS_NUM 4
+#include <main.h>
 
 void sigchld_handler(int sig)
 {
@@ -27,9 +22,42 @@ void sigchld_handler(int sig)
   errno = saved_errno;
 }
 
+int create_message_queue(mqd_t* msgq_ptr, const char* queue_name, int num_messages, int message_size)
+{
+  mqd_t mq;
+  struct mq_attr attr;
+  int mq_flags = O_RDWR | O_CREAT | O_CLOEXEC;
+  
+  printf("%s name=%s nummsgs=%d\n", __func__, queue_name, num_messages);
+
+  attr.mq_msgsize = message_size;
+  attr.mq_maxmsg = num_messages;
+
+  mq_unlink(queue_name);
+  mq = mq_open(queue_name, mq_flags, 0666, &attr);
+
+  if (mq < 0) {
+    printf("%s queue=%s already exists so try to open\n", __func__, queue_name);
+    mq = mq_open(queue_name, O_RDWR);
+    assert(mq != (mqd_t)-1);
+    printf("%s queue=%s opened successfully\n", __func__, queue_name);
+    return -1;
+  }
+
+  return 0;
+}
+
 int main()
 {
-  pid_t spid, gpid, ipid, wpid;
+  char* WATCHDOG_QUEUE = "/watchdog_queue";
+  char* MONITOR_QUEUE = "/monitor_queue";
+  char* DISK_QUEUE = "/disk_queue";
+  char* CAMERA_QUEUE = "/camera_queue";
+
+  pid_t pids[PROCESS_NUM];
+  pid_t (*funcs[PROCESS_NUM])() = {create_system_server, create_web_server, create_input, create_gui};
+  mqd_t mqs[THREAD_NUM];
+  char* mq_names[THREAD_NUM] = {WATCHDOG_QUEUE, MONITOR_QUEUE, DISK_QUEUE, CAMERA_QUEUE};
   int status;
   struct sigaction sa;
 
@@ -43,19 +71,22 @@ int main()
   }
 
   printf("메인 함수입니다.\n");
-  printf("시스템 서버를 생성합니다.\n");
-  spid = create_system_server();
-  printf("웹 서버를 생성합니다.\n");
-  wpid = create_web_server();
-  printf("입력 프로세스를 생성합니다.\n");
-  ipid = create_input();
-  printf("GUI를 생성합니다.\n");
-  gpid = create_gui();
 
-  waitpid(spid, NULL, 0);
-  waitpid(wpid, NULL, 0);
-  waitpid(ipid, NULL, 0);
-  waitpid(gpid, NULL, 0);
+  for (int i = 0; i < PROCESS_NUM; i++) {
+    pids[i] = funcs[i]();
+    printf("pid: %d\n", pids[i]);
+  }
+
+  for (int i = 0; i < PROCESS_NUM; i++) {
+    waitpid(pids[i], NULL, 0);
+  }
+
+  for (int i = 0; i < THREAD_NUM; i++) {
+    if (create_message_queue(&mqs[i], mq_names[i], 10, sizeof(toy_msg_t)) < 0) {
+      perror("create_message_queue error");
+      exit(-1);
+    }
+  }
 
   return 0;
 }
