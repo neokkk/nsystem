@@ -9,7 +9,7 @@ typedef struct _sig_ucontext {
   unsigned long uc_flags;
   struct ucontext *uc_link;
   stack_t uc_stack;
-  struct sigcontext uc_mcontext;
+  // struct sigcontext uc_mcontext;
   sigset_t uc_sigmask;
 } sig_ucontext_t;
 
@@ -28,7 +28,7 @@ void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
   uc = (sig_ucontext_t*)ucontext;
 
   /* Get the address at the time the signal was raised */
-  caller_address = (void*) uc ->uc_mcontext.arm_pc;  // RIP: x86_64 specific     arm_pc: ARM
+  // caller_address = (void*) uc ->uc_mcontext.x86_64;  // RIP: x86_64 specific     arm_pc: ARM
 
   fprintf(stderr, "\n");
 
@@ -40,15 +40,15 @@ void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
 
   size = backtrace(array, 50);
   /* overwrite sigaction with caller's address */
-  array[1] = caller_address;
-  messages = backtrace_symbols(array, size);
+  // array[1] = caller_address;
+  // messages = backtrace_symbols(array, size);
 
   /* skip first stack frame (points here) */
-  for (i = 1; i < size && messages != NULL; ++i) {
-    printf("[bt]: (%d) %s\n", i, messages[i]);
-  }
+  // for (i = 1; i < size && messages != NULL; ++i) {
+  //   printf("[bt]: (%d) %s\n", i, messages[i]);
+  // }
 
-  free(messages);
+  // free(messages);
   exit(-1);
 }
 
@@ -63,7 +63,7 @@ int toy_num_builtins()
   return sizeof(builtin_str) / sizeof(char*);
 }
 
-int toy_send(char **args)
+int toy_send(char** args)
 {
   printf("send message: %s\n", args[1]);
   return 0;
@@ -92,7 +92,7 @@ int toy_mutex(char** args)
   return 1;
 }
 
-int toy_exit(char **args)
+int toy_exit(char** args)
 {
   return 0;
 }
@@ -121,7 +121,7 @@ int toy_shell(char** args)
   return 0;
 }
 
-int (*builtin_func[]) (char**) = {
+int (*builtin_func[])(char**) = {
   &toy_send,
   &toy_shell,
   &toy_exit
@@ -163,7 +163,7 @@ char* toy_read_line(void)
 
 char** toy_split_line(char* line)
 {
-  int bufsize = TOY_TOK_BUFSIZE, position = 0;
+  int bufsize = TOK_BUFSIZE, position = 0;
   char** tokens = malloc(bufsize * sizeof(char*));
   char *token, **tokens_backup;
 
@@ -172,7 +172,7 @@ char** toy_split_line(char* line)
     exit(-1);
   }
 
-  token = strtok(line, TOY_TOK_DELIM);
+  token = strtok(line, TOK_DELIM);
   while (token != NULL) {
     tokens[position] = token;
     position++;
@@ -196,7 +196,7 @@ char** toy_split_line(char* line)
   return tokens;
 }
 
-void toy_loop(void)
+void toy_loop()
 {
   char* line;
   char** args;
@@ -243,7 +243,7 @@ int input()
   for (int i = 0; i < THREAD_NUM; i++) {
     if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
       perror("pthread_create error");
-      exit(-1);
+      return -1;
     }
   }
 
@@ -251,7 +251,7 @@ int input()
     sleep(1);
   }
 
-  exit(EXIT_SUCCESS);
+  return 0;
 }
 
 pid_t create_input()
