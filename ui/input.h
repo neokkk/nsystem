@@ -1,7 +1,9 @@
 #ifndef _INPUT_H
 #define _INPUT_H
 
+#include <errno.h>
 #include <execinfo.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>

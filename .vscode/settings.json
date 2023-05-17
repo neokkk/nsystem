@@ -4,6 +4,9 @@
     "tlpi_hdr.h": "c",
     "stdlib.h": "c",
     "signal.h": "c",
-    "ucontext.h": "c"
+    "ucontext.h": "c",
+    "errno.h": "c",
+    "input.h": "c",
+    "system_server.h": "c"
   }
 }

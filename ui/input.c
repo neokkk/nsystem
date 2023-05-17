@@ -1,3 +1,8 @@
+#define _POSIX_C_SOURCE 200809L
+#define THREAD_NUM 2
+#define TOK_BUFSIZE 64
+#define TOK_DELIM " \t\r\n\a"
+#define BUFSIZE 1024
 #include <input.h>
 
 typedef struct _sig_ucontext {
@@ -7,6 +12,10 @@ typedef struct _sig_ucontext {
   struct sigcontext uc_mcontext;
   sigset_t uc_sigmask;
 } sig_ucontext_t;
+
+static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static char global_message[BUFSIZE];
 
 void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
 {
@@ -19,13 +28,13 @@ void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
   uc = (sig_ucontext_t*)ucontext;
 
   /* Get the address at the time the signal was raised */
-  caller_address = (void *) uc ->uc_mcontext.rip;  // RIP: x86_64 specific     arm_pc: ARM
+  caller_address = (void*) uc ->uc_mcontext.arm_pc;  // RIP: x86_64 specific     arm_pc: ARM
 
   fprintf(stderr, "\n");
 
   if (sig_num == SIGSEGV)
     printf("signal %d (%s), address is %p from %p\n", sig_num, strsignal(sig_num), info->si_addr,
-           (void *) caller_address);
+           (void*) caller_address);
   else
     printf("signal %d (%s)\n", sig_num, strsignal(sig_num));
 
@@ -40,23 +49,209 @@ void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
   }
 
   free(messages);
-  exit(EXIT_FAILURE);
+  exit(-1);
+}
+
+char* builtin_str[] = {
+  "send",
+  "sh",
+  "exit"
+};
+
+int toy_num_builtins()
+{
+  return sizeof(builtin_str) / sizeof(char*);
+}
+
+int toy_send(char **args)
+{
+  printf("send message: %s\n", args[1]);
+  return 0;
+}
+
+int toy_mutex(char** args)
+{
+  if (args[1] == NULL) {
+    return -1;
+  }
+
+  printf("save message: %s\n", args[1]);
+
+  if (pthread_mutex_lock(&global_message_mutex) != 0) {
+    perror("pthread_mutex_lock error");
+    return -1;
+  }
+
+  strcpy(global_message, args[1]);
+  
+  if (pthread_mutex_unlock(&global_message_mutex)) {
+    perror("pthread_mutex_unlock error");
+    return -1;
+  }
+  
+  return 1;
+}
+
+int toy_exit(char **args)
+{
+  return 0;
+}
+
+int toy_shell(char** args)
+{
+  pid_t pid;
+  int status;
+
+  pid = fork();
+  if (pid == 0) {
+    if (execvp(args[0], args) == -1) {
+      perror("toy");
+    }
+    exit(-1);
+  } else if (pid < 0) {
+    perror("toy");
+  } else
+  {
+    do
+    {
+      waitpid(pid, &status, WUNTRACED);
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+  }
+
+  return 0;
+}
+
+int (*builtin_func[]) (char**) = {
+  &toy_send,
+  &toy_shell,
+  &toy_exit
+};
+
+int toy_execute(char** args)
+{
+  int i;
+
+  if (args[0] == NULL) {
+    return -1;
+  }
+
+  for (i = 0; i < toy_num_builtins(); i++) {
+    if (strcmp(args[0], builtin_str[i]) == 0) {
+      return (*builtin_func[i])(args);
+    }
+  }
+
+  return 0;
+}
+
+
+char* toy_read_line(void)
+{
+  char* line = NULL;
+  ssize_t bufsize = 0;
+
+  if (getline(&line, &bufsize, stdin) == -1) {
+    if (feof(stdin)) {
+      exit(EXIT_SUCCESS);
+    } else {
+      perror(": getline\n");
+      exit(-1);
+    }
+  }
+  return line;
+}
+
+char** toy_split_line(char* line)
+{
+  int bufsize = TOY_TOK_BUFSIZE, position = 0;
+  char** tokens = malloc(bufsize * sizeof(char*));
+  char *token, **tokens_backup;
+
+  if (!tokens) {
+    fprintf(stderr, "toy: allocation error\n");
+    exit(-1);
+  }
+
+  token = strtok(line, TOY_TOK_DELIM);
+  while (token != NULL) {
+    tokens[position] = token;
+    position++;
+
+    if (position >= bufsize) {
+      bufsize += TOK_BUFSIZE;
+      tokens_backup = tokens;
+      tokens = realloc(tokens, bufsize * sizeof(char*));
+
+      if (!tokens) {
+        free(tokens_backup);
+        fprintf(stderr, "toy: allocation error\n");
+        exit(EXIT_FAILURE);
+      }
+    }
+
+    token = strtok(NULL, TOK_DELIM);
+  }
+
+  tokens[position] = NULL;
+  return tokens;
+}
+
+void toy_loop(void)
+{
+  char* line;
+  char** args;
+  int status;
+
+  do {
+    printf("TOY> ");
+    line = toy_read_line();
+    args = toy_split_line(line);
+    status = toy_execute(args);
+
+    free(line);
+    free(args);
+  } while (status);
+}
+
+void* command_thread(void* arg)
+{
+  toy_loop();
+  exit(EXIT_SUCCESS);
+}
+
+void* sensor_thread(void* arg)
+{
+  while (1) {
+    sleep(1);
+  }
 }
 
 int input()
 {
   printf("input process is running!\n");
 
-  if (signal(SIGSEGV, sigsegv_handler) == SIG_ERR) {
-    perror("signal error");
-    exit(-1);
+  pthread_t threads[THREAD_NUM];
+  void* (*thread_funcs[THREAD_NUM])(void*) = {command_thread, sensor_thread};
+  struct sigaction sa;
+
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sa.sa_sigaction = sigsegv_handler;
+
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGSEGV, &sa, NULL);
+
+  for (int i = 0; i < THREAD_NUM; i++) {
+    if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
+      perror("pthread_create error");
+      exit(-1);
+    }
   }
 
   while (1) {
     sleep(1);
   }
 
-  exit(0);
+  exit(EXIT_SUCCESS);
 }
 
 pid_t create_input()

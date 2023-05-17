@@ -1,14 +1,137 @@
+#define _POSIX_C_SOURCE 200809L
+#define THREAD_NUM 4
 #include <system_server.h>
 
-int system_server()
+static int toy_timer = 0;
+
+static void sigalrm_handler(int sig, siginfo_t *si, void *uc)
 {
-  printf("system_server process is running\n");
+  printf("toy_timer: %d\n", toy_timer);
+  toy_timer++;
+}
+
+// void set_periodic_timer(long sec_delay, long usec_delay)
+// {
+//   timer_t timerid;
+//   printf("set periodic timer\n");
+
+//   struct sigevent sev = {
+//     .sigev_notify = SIGEV_SIGNAL,
+//     .sigev_signo = SIGALRM,
+//     .sigev_value = {
+//       .sival_ptr = &timerid,
+//     },
+//   };
+
+//   if (timer_create(CLOCK_REALTIME, &sev, &timerid) < 0) {
+//     perror("timer_create error");
+//     exit(-1);
+//   }
+
+//   struct itimerspec ts = {
+//     .it_value = {
+//       .tv_sec = 5,
+//       .tv_nsec = 0,
+//     },
+//     .it_interval = {
+//       .tv_sec = 5,
+//       .tv_nsec = 0,
+//     },
+//   };
+
+//   if (timer_settime(timerid, 0, &ts, NULL) < 0) {
+//     perror("timer_settime error");
+//     exit(-1);
+//   }
+
+//   exit(EXIT_SUCCESS);
+// }
+
+void* watchdog_thread(void* arg) {
+  int thread_id = (int)arg;
+  printf("thread %d is running\n", thread_id);
 
   while (1) {
     sleep(1);
   }
 
-  exit(0);
+  exit(EXIT_SUCCESS);
+}
+
+void* monitor_thread(void* arg) {
+  int thread_id = (int)arg;
+  printf("thread %d is running\n", thread_id);
+
+  while (1) {
+    sleep(1);
+  }
+
+  exit(EXIT_SUCCESS);
+}
+
+void* disk_service_thread(void* arg) {
+  int thread_id = (int)arg;
+  printf("thread %d is running\n", thread_id);
+
+  while (1) {
+    sleep(1);
+  }
+
+  exit(EXIT_SUCCESS);
+}
+
+void* camera_service_thread(void* arg) {
+  int thread_id = (int)arg;
+  printf("thread %d is running\n", thread_id);
+
+  while (1) {
+    sleep(1);
+  }
+
+  exit(EXIT_SUCCESS);
+}
+
+void set_periodic_timer(long sec_delay, long usec_delay)
+{
+	struct itimerval itimer_val = {
+    .it_interval = { .tv_sec = sec_delay, .tv_usec = usec_delay },
+    .it_value = { .tv_sec = sec_delay, .tv_usec = usec_delay }
+  };
+
+	setitimer(ITIMER_REAL, &itimer_val, (struct itimerval*)0);
+}
+
+int system_server()
+{
+  printf("system_server process is running\n");
+
+  struct sigaction sa;
+  pthread_t threads[THREAD_NUM]; // watchdog, monitor, disk service, camera service
+  void* (*thread_funcs[THREAD_NUM])(void*) = {watchdog_thread, monitor_thread, disk_service_thread, camera_service_thread};
+
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = sigalrm_handler;
+  sigemptyset(&sa.sa_mask);
+
+  if (sigaction(SIGALRM, &sa, NULL) == -1) {
+    perror("sigaction error");
+    exit(-1);
+  }
+
+  set_periodic_timer(5, 0);
+
+  for (int i = 0; i < THREAD_NUM; i++) {
+    if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
+      perror("pthread_create error");
+      exit(-1);
+    }
+  }
+
+  while (1) {
+    sleep(1);
+  }
+
+  exit(EXIT_SUCCESS);
 }
 
 pid_t create_system_server()
