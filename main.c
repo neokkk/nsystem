@@ -47,14 +47,14 @@ int main()
   spid = create_system_server();
   printf("웹 서버를 생성합니다.\n");
   wpid = create_web_server();
-  // printf("입력 프로세스를 생성합니다.\n");
-  // ipid = create_input();
+  printf("입력 프로세스를 생성합니다.\n");
+  ipid = create_input();
   printf("GUI를 생성합니다.\n");
   gpid = create_gui();
 
   waitpid(spid, NULL, 0);
   waitpid(wpid, NULL, 0);
-  // waitpid(ipid, NULL, 0);
+  waitpid(ipid, NULL, 0);
   waitpid(gpid, NULL, 0);
 
   return 0;
