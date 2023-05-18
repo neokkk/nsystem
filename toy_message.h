@@ -1,6 +1,8 @@
 #ifndef _TOY_MESSAGE_H_
 #define _TOY_MESSAGE_H_
 
+#define QUEUE_NUM 4
+
 #include <unistd.h>
 
 typedef struct {

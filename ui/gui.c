@@ -16,7 +16,7 @@ pid_t create_gui()
         perror("prctl error");
         exit(-1);
       }
-      execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "localhost:8888", NULL);
+      execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "--disable-gpu", "http://localhost:8888", NULL);
       break;
     default:
       printf("gui pid: %d\n", gui_pid);
