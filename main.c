@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define QUEUE_NUM 4
 #define PROCESS_NUM 4
+
 #include <main.h>
 
 void sigchld_handler(int sig)
@@ -29,7 +30,7 @@ int create_message_queue(mqd_t* msgq_ptr, const char* queue_name, int num_messag
   struct mq_attr attr;
   int mq_flags = O_RDWR | O_CREAT | O_CLOEXEC;
   
-  printf("%s name=%s nummsgs=%d\n", __func__, queue_name, num_messages);
+  printf("%s is created(%d).\n", queue_name, num_messages);
 
   attr.mq_msgsize = message_size;
   attr.mq_maxmsg = num_messages;
@@ -38,12 +39,14 @@ int create_message_queue(mqd_t* msgq_ptr, const char* queue_name, int num_messag
   mq = mq_open(queue_name, mq_flags, 0666, &attr);
 
   if (mq < 0) {
-    printf("%s queue=%s already exists so try to open\n", __func__, queue_name);
+    printf("%s is already exist.\n", queue_name);
     mq = mq_open(queue_name, O_RDWR);
     assert(mq != (mqd_t)-1);
-    printf("%s queue=%s opened successfully\n", __func__, queue_name);
+    printf("%s is opened.\n", __func__, queue_name);
     return -1;
   }
+
+  *msgq_ptr = mq;
 
   return 0;
 }
@@ -62,26 +65,25 @@ int main()
   sigemptyset(&sa.sa_mask);
 
   if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-    perror("sigaction error");
+    perror("sigaction error\n");
     exit(-1);
   }
 
   printf("메인 함수입니다.\n");
 
+  for (int i = 0; i < QUEUE_NUM; i++) {
+    if (create_message_queue(&mqs[i], mq_names[i], 10, sizeof(toy_msg_t)) < 0) {
+      perror("create message queue error\n");
+      exit(-1);
+    }
+  }
+
   for (int i = 0; i < PROCESS_NUM; i++) {
     pids[i] = funcs[i]();
-    printf("pid: %d\n", pids[i]);
   }
 
   for (int i = 0; i < PROCESS_NUM; i++) {
     waitpid(pids[i], NULL, 0);
-  }
-
-  for (int i = 0; i < QUEUE_NUM; i++) {
-    if (create_message_queue(&mqs[i], mq_names[i], 10, sizeof(toy_msg_t)) < 0) {
-      perror("create message queue error");
-      exit(-1);
-    }
   }
 
   return 0;

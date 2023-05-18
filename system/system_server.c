@@ -1,27 +1,26 @@
 #define _POSIX_C_SOURCE 200809L
 #define BUFSIZE 1024
-#define QUEUE_NUM 4
-#define THREAD_NUM 5
+#define SYSTEM_THREAD_NUM 5
 #define DISK_USAGE "df -H ./"
 #define CAMERA_TAKE_PICTURE 1
 #define SENSOR_DATA 1
 
 #include <system_server.h>
 
-mqd_t mqs[QUEUE_NUM];
-
 static int toy_timer = 0;
 static bool global_timer_stopped = false;
-pthread_mutex_t toy_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
-sem_t global_timer_sem;
+static pthread_mutex_t toy_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static sem_t global_timer_sem;
 static sensor_data_t* sensor_data;
+static mqd_t mqs[QUEUE_NUM];
+static char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
 
 static void sigalrm_handler(int sig, siginfo_t *si, void *uc)
 {
   sem_post(&global_timer_sem);
 }
 
-static void system_timeout_handler()
+void system_timeout_handler()
 {
   pthread_mutex_lock(&toy_timer_mutex);
   toy_timer++;
@@ -29,13 +28,14 @@ static void system_timeout_handler()
   pthread_mutex_unlock(&toy_timer_mutex);
 }
 
-static void* timer_thread(void* arg)
+void* timer_thread(void* arg)
 {
   int thread_id = (int)arg;
+
   signal(SIGALRM, sigalrm_handler); // 1. 알림 시그널 핸들러 수행
   set_periodic_timer(1, 1);
 
-  printf("thread %d is running\n", thread_id);
+  printf("timer thread(%d) is running\n", thread_id);
 
   while (!global_timer_stopped) {
     int rc = sem_wait(&global_timer_sem);
@@ -43,8 +43,8 @@ static void* timer_thread(void* arg)
     if (rc == -1 && errno == EINTR) continue;
 
 		if (rc == -1) {
-		    perror("sem_wait");
-		    exit(-1);
+      perror("global_timer sem_wait error\n");
+      exit(-1);
 		}
 
     system_timeout_handler(); // 2. 시스템 타임아웃 핸들러 수행
@@ -61,11 +61,11 @@ void* watchdog_thread(void* arg)
   ssize_t num_read;
   int priority;
 
-  printf("thread %d is running\n", thread_id);
+  printf("watchdog thread(%d) is running\n", thread_id);
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read > 0);
+    assert(num_read >= 0);
     printf("watchdog_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -84,11 +84,11 @@ void* monitor_thread(void* arg)
   int priority;
   int shimid;
 
-  printf("thread %d is running\n", thread_id);
+  printf("monitor thread(%d) is running\n", thread_id);
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read > 0); 
+    assert(num_read >= 0); 
     printf("monitor_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -117,11 +117,11 @@ void* disk_service_thread(void* arg)
   ssize_t num_read;
   int priority;
 
-  printf("thread %d is running\n", thread_id);
+  printf("disk_service thread(%d) is running\n", thread_id);
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read > 0);
+    assert(num_read >= 0);
     printf("disk_service_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -155,11 +155,11 @@ void* camera_service_thread(void* arg)
   ssize_t num_read;
   int priority;
 
-  printf("thread %d is running\n", thread_id);
+  printf("camera_service thread(%d) is running\n", thread_id);
 
    while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read > 0);
+    assert(num_read >= 0);
     printf("camera_service_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -176,35 +176,33 @@ void* camera_service_thread(void* arg)
 
 int system_server()
 {
-  printf("system_server process is running\n");
-
   struct sigaction sa;
-  pthread_t threads[THREAD_NUM];
-  void* (*thread_funcs[THREAD_NUM])(void*) = {watchdog_thread, monitor_thread, disk_service_thread, camera_service_thread, timer_thread};
-  char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
+  pthread_t threads[SYSTEM_THREAD_NUM];
+  void* (*thread_funcs[SYSTEM_THREAD_NUM])(void*) = {watchdog_thread, monitor_thread, disk_service_thread, camera_service_thread, timer_thread};
 
   sa.sa_flags = SA_SIGINFO;
   sa.sa_sigaction = sigalrm_handler;
   sigemptyset(&sa.sa_mask);
 
   if (sigaction(SIGALRM, &sa, NULL) == -1) { // SIGALRM 핸들러 등록
-    perror("sigaction error");
-    exit(-1);
+    perror("sigaction error\n");
+    return -1;
   }
 
   set_periodic_timer(5, 0); // 5초마다 SIGALRM 시그널 발생
 
-  for (int i = 0; i < THREAD_NUM; i++) {
-    if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
-      perror("pthread_create error");
-      exit(-1);
+  for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
+    if ((mqs[i] = mq_open(mq_names[i], O_WRONLY)) < 0) {
+      perror("mq_open error\n");
+      return -1;
     }
   }
 
-  for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
-    if ((mqs[i] = mq_open(mq_names[i], O_WRONLY)) < 0) {
-      perror("mq_open error");
-      exit(-1);
+  printf("system thread num: %d\n", SYSTEM_THREAD_NUM);
+  for (int i = 0; i < SYSTEM_THREAD_NUM; i++) {
+    if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
+      perror("pthread_create error\n");
+      return -1;
     }
   }
 
@@ -212,7 +210,7 @@ int system_server()
     sleep(1);
   }
 
-  exit(EXIT_SUCCESS);
+  return 0;
 }
 
 pid_t create_system_server()
@@ -224,11 +222,11 @@ pid_t create_system_server()
 
   switch (system_pid = fork()) {
     case -1:
-      perror("system_server fork error");
+      perror("system_server fork error\n");
       exit(-1);
     case 0:
       if (prctl(PR_SET_NAME, process_name) < 0) {
-        perror("prctl error");
+        perror("prctl error\n");
         exit(-1);
       }
       system_server();
