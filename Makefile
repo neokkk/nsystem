@@ -5,23 +5,23 @@ UI = ./ui
 WEB_SERVER = ./web_server
 HAL = ./hal
 
-INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL)
+INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL) -Isem -Itimer
 
 CC = gcc
 CXX = g++
 CXXLIBS = -lpthread -lm -lrt
 CXXFLAGS = $(INCLUDEDIRS) -g -O0 -std=c++20
 
-objects = main.o system_server.o web_server.o input.o gui.o
+objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o
 cxx_objects = camera_HAL.o ControlThread.o
 
 $(TARGET): $(objects) $(cxx_objects)
 	$(CXX) -o $(TARGET) $(objects) $(cxx_objects) $(CXXLIBS)
 
 main.o:  main.c
-	$(CC) -g $(INCLUDES) -c main.c
+	$(CC) -g $(INCLUDES) -c main.c main.h
 
-system_server.o: $(SYSTEM)/system_server.h toy_message.h $(SYSTEM)/system_server.c
+system_server.o: $(SYSTEM)/system_server.h $(SYSTEM)/system_server.c
 	$(CC) -g $(INCLUDES) -c ./system/system_server.c
 
 gui.o: $(UI)/gui.h $(UI)/gui.c
@@ -32,6 +32,12 @@ input.o: $(UI)/input.h $(UI)/input.c
 
 web_server.o: $(WEB_SERVER)/web_server.h $(WEB_SERVER)/web_server.c
 	$(CC) -g $(INCLUDES) -c $(WEB_SERVER)/web_server.c
+
+sem.o: sem.h sem.c
+	$(CC) -g $(INCLUDES) -c sem.c semun.h
+
+timer.o: timer.h timer.c
+	$(CC) -g $(INCLUDES) -c timer.c
 
 camera_HAL.o: $(HAL)/camera_HAL.cpp
 	$(CXX) -g $(INCLUDES) $(CXXFLAGS) -c  $(HAL)/camera_HAL.cpp
