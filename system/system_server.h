@@ -16,9 +16,9 @@
 #include <unistd.h>
 #include <wait.h>
 
+#include <sensor_data.h>
 #include <toy_message.h>
 #include <timer.h>
-
 
 pid_t create_system_server();
 int system_server();

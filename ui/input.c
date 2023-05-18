@@ -3,6 +3,7 @@
 #define TOK_BUFSIZE 64
 #define TOK_DELIM " \t\r\n\a"
 #define BUFSIZE 1024
+
 #include <input.h>
 
 typedef struct _sig_ucontext {
@@ -14,6 +15,8 @@ typedef struct _sig_ucontext {
 } sig_ucontext_t;
 
 static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
+static mqd_t monitor_queue;
+static sensor_data_t* sensor_data;
 
 static char global_message[BUFSIZE];
 
@@ -235,6 +238,17 @@ void toy_loop()
   } while (status);
 }
 
+int get_shm_id(key_t shm_key, int size) {
+  int shmid;
+  if ((shmid = shmget(shm_key, size, 0666)) < 0) {
+    perror("shmget error");
+    printf("errno: %d\n", errno);
+    exit(-1);
+  }
+  printf("shmid: %d\n", shmid);
+  return shmid;
+}
+
 void* command_thread(void* arg)
 {
   toy_loop();
@@ -243,9 +257,30 @@ void* command_thread(void* arg)
 
 void* sensor_thread(void* arg)
 {
+  int thread_id = (int)arg;
+  toy_msg_t msg;
+  int semid, shmid;
+  int mqretcode;
+
+  shmid = get_shm_id(SHM_SENSOR_KEY, sizeof(sensor_data_t));
+
   while (1) {
-    sleep(1);
+    posix_sleep_ms(5000);
+
+    if (sensor_data != NULL) {
+      sensor_data ->humidity = rand() % 40;
+      sensor_data ->temperature = rand() % 20 + 20;
+      sensor_data ->pressure = 30;
+    }
+
+    msg.msg_type = 1;
+    msg.param1 = shmid;
+    msg.param2 = 0;
+    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+    assert(mqretcode == 0);
   }
+
+  sem_release(semid, 0); // V
 }
 
 int input()
@@ -258,15 +293,30 @@ int input()
 
   sa.sa_flags = SA_RESTART | SA_SIGINFO;
   sa.sa_sigaction = sigsegv_handler;
-
   sigemptyset(&sa.sa_mask);
-  sigaction(SIGSEGV, &sa, NULL);
+
+  if (sigaction(SIGSEGV, &sa, NULL) < 0) { // SIGSEVG 시그널 핸들러 등록
+    perror("sigaction error\n");
+    return -1;
+  }
 
   for (int i = 0; i < THREAD_NUM; i++) {
     if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
-      perror("pthread_create error");
+      perror("pthread_create error\n");
       return -1;
     }
+  }
+
+  sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
+  if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
+    perror("shm_create error\n");
+    return -1;
+  }
+
+  monitor_queue = mq_open("/monitor_queue", O_RDWR);
+  if (monitor_queue == -1) {
+    perror("mq_open error\n");
+    return -1;
   }
 
   while (1) {

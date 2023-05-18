@@ -12,7 +12,7 @@ CXX = g++
 CXXLIBS = -lpthread -lm -lrt
 CXXFLAGS = $(INCLUDEDIRS) -g -O0 -std=c++20
 
-objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o
+objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o shared_memory.o
 cxx_objects = camera_HAL.o ControlThread.o
 
 $(TARGET): $(objects) $(cxx_objects)
@@ -28,7 +28,7 @@ gui.o: $(UI)/gui.h $(UI)/gui.c
 	$(CC) -g $(INCLUDES) -c $(UI)/gui.c
 
 input.o: $(UI)/input.h $(UI)/input.c
-	$(CC) -g $(INCLUDES) -c $(UI)/input.c
+	$(CC) -g $(INCLUDES) -c $(UI)/input.c sensor_data.h
 
 web_server.o: $(WEB_SERVER)/web_server.h $(WEB_SERVER)/web_server.c
 	$(CC) -g $(INCLUDES) -c $(WEB_SERVER)/web_server.c
@@ -38,6 +38,9 @@ sem.o: sem.h sem.c
 
 timer.o: timer.h timer.c
 	$(CC) -g $(INCLUDES) -c timer.c
+
+shared_memory.o: shared_memory.h shared_memory.c
+	$(CC) -g $(INCLUDES) -c shared_memory.c
 
 camera_HAL.o: $(HAL)/camera_HAL.cpp
 	$(CXX) -g $(INCLUDES) $(CXXFLAGS) -c  $(HAL)/camera_HAL.cpp

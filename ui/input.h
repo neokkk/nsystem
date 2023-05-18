@@ -4,18 +4,31 @@
 #include <assert.h>
 #include <errno.h>
 #include <execinfo.h>
+#include <mqueue.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
 #include <sys/signal.h>
 #include <sys/types.h>
 #include <ucontext.h>
 #include <unistd.h>
 #include <wait.h>
+
+#include <sensor_data.h>
+#include <shared_memory.h>
 #include <toy_message.h>
+#include <timer.h>
+
+typedef struct sensor_data_t {
+  float altitude;
+  float temperature;
+  float pressure;
+};
 
 pid_t create_input();
 int input();

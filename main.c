@@ -79,7 +79,7 @@ int main()
 
   for (int i = 0; i < QUEUE_NUM; i++) {
     if (create_message_queue(&mqs[i], mq_names[i], 10, sizeof(toy_msg_t)) < 0) {
-      perror("create_message_queue error");
+      perror("create message queue error");
       exit(-1);
     }
   }

@@ -3,6 +3,9 @@
 #define QUEUE_NUM 4
 #define THREAD_NUM 5
 #define DISK_USAGE "df -H ./"
+#define CAMERA_TAKE_PICTURE 1
+#define SENSOR_DATA 1
+
 #include <system_server.h>
 
 mqd_t mqs[QUEUE_NUM];
@@ -11,6 +14,7 @@ static int toy_timer = 0;
 static bool global_timer_stopped = false;
 pthread_mutex_t toy_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t global_timer_sem;
+static sensor_data_t* sensor_data;
 
 static void sigalrm_handler(int sig, siginfo_t *si, void *uc)
 {
@@ -78,17 +82,27 @@ void* monitor_thread(void* arg)
   toy_msg_t msg;
   ssize_t num_read;
   int priority;
+  int shimid;
 
   printf("thread %d is running\n", thread_id);
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
     assert(num_read > 0); 
-    printf("watchdog_thread: 메시지가 도착했습니다.\n");
+    printf("monitor_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
     printf("msg.param1: %d\n", msg.param1);
     printf("msg.param2: %d\n", msg.param2);
+
+    if (msg.msg_type == SENSOR_DATA) { // 센서 데이터를 받으면 공유 메모리에 저장된 정보를 불러온다.
+      shimid = msg.param1;
+      sensor_data = (sensor_data_t*)shm_attach(shimid);
+      printf("sensor humidity: %d\n", sensor_data ->humidity);
+      printf("sensor pressure: %d\n", sensor_data ->pressure);
+      printf("sensor temperature: %d\n", sensor_data ->temperature);
+      shm_detach(sensor_data);
+    }
   }
 
   exit(EXIT_SUCCESS);
@@ -108,7 +122,7 @@ void* disk_service_thread(void* arg)
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
     assert(num_read > 0);
-    printf("watchdog_thread: 메시지가 도착했습니다.\n");
+    printf("disk_service_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
     printf("msg.param1: %d\n", msg.param1);
@@ -146,14 +160,13 @@ void* camera_service_thread(void* arg)
    while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
     assert(num_read > 0);
-    printf("watchdog_thread: 메시지가 도착했습니다.\n");
+    printf("camera_service_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
     printf("msg.param1: %d\n", msg.param1);
     printf("msg.param2: %d\n", msg.param2);
 
-    // 카메라로 사진 찍기
-    if (strcmp(msg.msg_type, "CAMERA_TAKE_PICTURE") == 0) {
+    if (strcmp(msg.msg_type, CAMERA_TAKE_PICTURE) == 0) { // 카메라로 사진 찍기
       toy_camera_take_picture();
     }
   }
@@ -166,7 +179,6 @@ int system_server()
   printf("system_server process is running\n");
 
   struct sigaction sa;
-
   pthread_t threads[THREAD_NUM];
   void* (*thread_funcs[THREAD_NUM])(void*) = {watchdog_thread, monitor_thread, disk_service_thread, camera_service_thread, timer_thread};
   char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
@@ -175,14 +187,12 @@ int system_server()
   sa.sa_sigaction = sigalrm_handler;
   sigemptyset(&sa.sa_mask);
 
-  // SIGALRM 핸들러 등록
-  if (sigaction(SIGALRM, &sa, NULL) == -1) {
+  if (sigaction(SIGALRM, &sa, NULL) == -1) { // SIGALRM 핸들러 등록
     perror("sigaction error");
     exit(-1);
   }
 
-  // 5초마다 SIGALRM 시그널 발생
-  set_periodic_timer(5, 0);
+  set_periodic_timer(5, 0); // 5초마다 SIGALRM 시그널 발생
 
   for (int i = 0; i < THREAD_NUM; i++) {
     if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
@@ -191,8 +201,7 @@ int system_server()
     }
   }
 
-  // 메시지 큐 열기
-  for (int i = 0; i < QUEUE_NUM; i++) {
+  for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
     if ((mqs[i] = mq_open(mq_names[i], O_WRONLY)) < 0) {
       perror("mq_open error");
       exit(-1);
