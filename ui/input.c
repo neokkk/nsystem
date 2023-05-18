@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
-#define THREAD_NUM 2
+#define INPUT_THREAD_NUM 2
 #define TOK_BUFSIZE 64
 #define TOK_DELIM " \t\r\n\a"
 #define BUFSIZE 1024
@@ -15,9 +15,9 @@ typedef struct _sig_ucontext {
 } sig_ucontext_t;
 
 static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
-static mqd_t monitor_queue;
 static sensor_data_t* sensor_data;
-
+static mqd_t mqs[QUEUE_NUM];
+static char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
 static char global_message[BUFSIZE];
 
 static void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
@@ -60,7 +60,17 @@ char* builtin_str[] = {
   "mu",
   "sh",
   "mq",
-  "exit"
+  "exit",
+  "elf"
+};
+
+int (*builtin_func[])(char**) = {
+  &toy_send,
+  &toy_mutex,
+  &toy_shell,
+  &toy_message_queue,
+  &toy_exit,
+  &toy_read_elf_header,
 };
 
 int toy_num_builtins()
@@ -138,20 +148,12 @@ int toy_message_queue(char** args)
     msg.msg_type = atoi(args[2]);
     msg.param1 = 0;
     msg.param2 = 0;
-    mqretcode = mq_send("/camera_queue", (void*)&msg, sizeof(msg), 0);
+    mqretcode = mq_send(mqs[3], (void*)&msg, sizeof(msg), 0);
     assert(mqretcode == 0);
   }
 
   return 0;
 }
-
-int (*builtin_func[])(char**) = {
-  &toy_send,
-  &toy_mutex,
-  &toy_shell,
-  &toy_message_queue,
-  &toy_exit
-};
 
 int toy_execute(char** args)
 {
@@ -168,6 +170,36 @@ int toy_execute(char** args)
   }
 
   return 0;
+}
+
+int toy_read_elf_header(char** args)
+{
+  int mqretcode;
+  toy_msg_t msg;
+  int elf_fd;
+  size_t content_size;
+  struct stat st;
+  Elf64Hdr* map;
+
+  if ((elf_fd = open("./sample/sample.elf", O_RDONLY)) < 0) {
+    printf("cannot open ./sample/sample.elf\n");
+    return -1;
+  }
+  
+  if (fstat(elf_fd, &st) < 0) {
+    perror("cannot stat ./sample/sample.elf\n");
+    return -1;
+  }
+
+  map = (Elf64Hdr*)mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, elf_fd, 0);
+  printf("real size: %ld\n", st.st_size);
+  printf("architecture: %ld\n", map ->e_machine);
+  printf("file type: %ld\n", map ->e_type);
+  printf("file version: %ld\n", map ->e_version);
+  printf("entry point of VA: %ld\n", map ->e_entry);
+  printf("elf header size: %ld\n", map ->e_type);
+
+  return 1;
 }
 
 char* toy_read_line(void)
@@ -231,6 +263,7 @@ void toy_loop()
     printf("TOY> ");
     line = toy_read_line();
     args = toy_split_line(line);
+    printf("args: %s\n", args[0]);
     status = toy_execute(args);
 
     free(line);
@@ -251,6 +284,7 @@ int get_shm_id(key_t shm_key, int size) {
 
 void* command_thread(void* arg)
 {
+  printf("command thread is running\n");
   toy_loop();
   exit(EXIT_SUCCESS);
 }
@@ -262,33 +296,32 @@ void* sensor_thread(void* arg)
   int semid, shmid;
   int mqretcode;
 
+  printf("sensor thread is running\n");
+
   shmid = get_shm_id(SHM_SENSOR_KEY, sizeof(sensor_data_t));
 
   while (1) {
     posix_sleep_ms(5000);
 
-    if (sensor_data != NULL) {
-      sensor_data ->humidity = rand() % 40;
-      sensor_data ->temperature = rand() % 20 + 20;
-      sensor_data ->pressure = 30;
-    }
+    if (sensor_data == NULL) continue;
+
+    sensor_data ->humidity = rand() % 40;
+    sensor_data ->temperature = rand() % 20 + 20;
+    sensor_data ->pressure = 30;
 
     msg.msg_type = 1;
     msg.param1 = shmid;
     msg.param2 = 0;
-    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+    mqretcode = mq_send(mqs[1], (char *)&msg, sizeof(msg), 0);
+    printf("sensor data send \n");
     assert(mqretcode == 0);
   }
-
-  sem_release(semid, 0); // V
 }
 
 int input()
 {
-  printf("input process is running!\n");
-
-  pthread_t threads[THREAD_NUM];
-  void* (*thread_funcs[THREAD_NUM])(void*) = {command_thread, sensor_thread};
+  pthread_t threads[INPUT_THREAD_NUM];
+  void* (*thread_funcs[INPUT_THREAD_NUM])(void*) = {command_thread, sensor_thread};
   struct sigaction sa;
 
   sa.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -300,24 +333,27 @@ int input()
     return -1;
   }
 
-  for (int i = 0; i < THREAD_NUM; i++) {
+    sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
+    if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
+      perror("shm_create error\n");
+      return -1;
+    }
+
+  for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
+    if ((mqs[i] = mq_open(mq_names[i], O_RDONLY)) < 0) {
+      perror("mq_open error");
+      return -1;
+    }
+  }
+
+  for (int i = 0; i < INPUT_THREAD_NUM; i++) {
     if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
       perror("pthread_create error\n");
       return -1;
     }
   }
 
-  sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
-  if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
-    perror("shm_create error\n");
-    return -1;
-  }
-
-  monitor_queue = mq_open("/monitor_queue", O_RDWR);
-  if (monitor_queue == -1) {
-    perror("mq_open error\n");
-    return -1;
-  }
+  printf("<== system\n");
 
   while (1) {
     sleep(1);
