@@ -2,6 +2,7 @@
 #define BUFSIZE 1024
 #define SYSTEM_THREAD_NUM 5
 #define DISK_USAGE "df -H ./"
+#define WATCH_DIR "./fs"
 #define CAMERA_TAKE_PICTURE 1
 #define SENSOR_DATA 1
 
@@ -65,7 +66,7 @@ void* watchdog_thread(void* arg)
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read >= 0);
+    if (num_read < 0) continue;
     printf("watchdog_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -88,7 +89,7 @@ void* monitor_thread(void* arg)
 
   while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read >= 0); 
+    if (num_read < 0) continue;
     printf("monitor_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
@@ -111,38 +112,47 @@ void* monitor_thread(void* arg)
 void* disk_service_thread(void* arg)
 {
   int thread_id = (int)arg;
-  FILE* fd;
   char buf[BUFSIZE];
-  toy_msg_t msg;
+  char* p;
   ssize_t num_read;
-  int priority;
+  struct inotify_event* event;
+  int watch_fd;
+  int total_size = 0;
 
   printf("disk_service thread(%d) is running\n", thread_id);
 
+  if ((watch_fd = inotify_init()) < 0) {
+    perror("inotify_init error");
+    exit(-1);
+  }
+
+  if (inotify_add_watch(watch_fd, WATCH_DIR, IN_CREATE) < 0) {
+    perror("inotify_add_watch error");
+    exit(-1);
+  }
+
   while (1) {
-    num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read >= 0);
-    printf("disk_service_thread: 메시지가 도착했습니다.\n");
-    printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
-    printf("msg.type: %d\n", msg.msg_type);
-    printf("msg.param1: %d\n", msg.param1);
-    printf("msg.param2: %d\n", msg.param2);
+    num_read = read(watch_fd, buf, BUFSIZE);
+    printf("num_read: %d bytes\n", num_read);
 
-    // 디스크 사용량 출력
-    if ((fd = popen(DISK_USAGE, "r")) == NULL) {
-      perror("popen error");
+    if (num_read == 0) {
+      printf("read from inotify fd returned 0!\n");
+      return 0;
+    }
+
+    if (num_read == -1) {
+      perror("read error");
       exit(-1);
     }
 
-    while (fgets(buf, BUFSIZE, fd) != NULL) {
-      printf("%s", buf);
+    for (p = buf; p < buf + num_read; ) {
+      event = (struct inotify_event*)p;
+      if (event ->mask & IN_CREATE) {
+        printf("The file %s was created.\n", event ->name);
+        break;
+      }
+      p += sizeof(struct inotify_event) + event ->len;
     }
-
-    if (pclose(fd) < 0) {
-      perror("pclose error");
-      exit(-1);
-    }
-    posix_sleep_ms(10000);
   }
 
   exit(EXIT_SUCCESS);
@@ -159,7 +169,7 @@ void* camera_service_thread(void* arg)
 
    while (1) {
     num_read = mq_receive(mqs[thread_id], (void*)&msg, sizeof(toy_msg_t), &priority);
-    assert(num_read >= 0);
+    if (num_read < 0) continue;
     printf("camera_service_thread: 메시지가 도착했습니다.\n");
     printf("read %ld bytes; priority = %u\n", (long) num_read, priority);
     printf("msg.type: %d\n", msg.msg_type);
