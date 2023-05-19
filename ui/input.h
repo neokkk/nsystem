@@ -6,6 +6,7 @@
 #include <execinfo.h>
 #include <mqueue.h>
 #include <pthread.h>
+#include <seccomp.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -53,6 +54,7 @@ int toy_send(char** args);
 int toy_mutex(char** args);
 int toy_message_queue(char** args);
 int toy_read_elf_header(char **args);
+int toy_mincore(char** args);
 int toy_exit(char** args);
 int toy_shell(char** args);
 int toy_execute(char** args);

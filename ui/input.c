@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #define INPUT_THREAD_NUM 2
 #define TOK_BUFSIZE 64
@@ -13,6 +14,8 @@ typedef struct _sig_ucontext {
   // struct sigcontext uc_mcontext;
   sigset_t uc_sigmask;
 } sig_ucontext_t;
+
+typedef void* scmp_filter_ctx;
 
 static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
 static sensor_data_t* sensor_data;
@@ -61,7 +64,8 @@ char* builtin_str[] = {
   "sh",
   "mq",
   "exit",
-  "elf"
+  "elf",
+  "mincore",
 };
 
 int (*builtin_func[])(char**) = {
@@ -71,6 +75,7 @@ int (*builtin_func[])(char**) = {
   &toy_message_queue,
   &toy_exit,
   &toy_read_elf_header,
+  &toy_mincore,
 };
 
 int toy_num_builtins()
@@ -202,6 +207,19 @@ int toy_read_elf_header(char** args)
   return 1;
 }
 
+int toy_mincore(char** args)
+{
+  unsigned char vec[20];
+  int res;
+  size_t page = sysconf(_SC_PAGESIZE);
+  printf("page size: %ld\n", page);
+  void* addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+  res = mincore(addr, 20 * page, vec);
+  assert(res == 0);
+
+  return 1;
+}
+
 char* toy_read_line(void)
 {
   char* line = NULL;
@@ -323,19 +341,33 @@ int input()
   pthread_t threads[INPUT_THREAD_NUM];
   void* (*thread_funcs[INPUT_THREAD_NUM])(void*) = {command_thread, sensor_thread};
   struct sigaction sa;
+  scmp_filter_ctx ctx;
 
   sa.sa_flags = SA_RESTART | SA_SIGINFO;
   sa.sa_sigaction = sigsegv_handler;
   sigemptyset(&sa.sa_mask);
 
+  ctx = seccomp_init(SCMP_ACT_ALLOW);
+  if (ctx == NULL) {
+    perror("seccomp_init error\n");
+    return -1;
+  }
+
+  if (seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0) < 0) {
+    perror("seccomp_rule_add error");
+    return -1;
+  }
+
+  seccomp_release(ctx);
+
   if (sigaction(SIGSEGV, &sa, NULL) < 0) { // SIGSEVG 시그널 핸들러 등록
-    perror("sigaction error\n");
+    perror("sigaction error");
     return -1;
   }
 
     sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
     if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
-      perror("shm_create error\n");
+      perror("shm_create error");
       return -1;
     }
 

@@ -9,7 +9,7 @@ INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL) -Isem -Itimer
 
 CC = gcc
 CXX = g++
-CXXLIBS = -lpthread -lm -lrt
+CXXLIBS = -lpthread -lm -lrt -lseccomp
 CXXFLAGS = $(INCLUDEDIRS) -g -O0 -std=c++20
 
 objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o shared_memory.o
