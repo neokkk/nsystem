@@ -114,7 +114,7 @@ int toy_mutex(char** args)
 
 int toy_exit(char** args)
 {
-  return 0;
+  exit(0);
 }
 
 int toy_shell(char** args)
@@ -212,7 +212,6 @@ int toy_mincore(char** args)
   unsigned char vec[20];
   int res;
   size_t page = sysconf(_SC_PAGESIZE);
-  printf("page size: %ld\n", page);
   void* addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
   res = mincore(addr, 20 * page, vec);
   assert(res == 0);
@@ -281,12 +280,12 @@ void toy_loop()
     printf("TOY> ");
     line = toy_read_line();
     args = toy_split_line(line);
-    printf("args: %s\n", args[0]);
     status = toy_execute(args);
+    printf("status: %d\n", status);
 
     free(line);
     free(args);
-  } while (status);
+  } while (1);
 }
 
 int get_shm_id(key_t shm_key, int size) {
@@ -358,6 +357,12 @@ int input()
     return -1;
   }
 
+  if (seccomp_load(ctx) < 0) {
+    seccomp_release(ctx);
+    perror("seccomp_load error");
+    return -1;
+  }
+
   seccomp_release(ctx);
 
   if (sigaction(SIGSEGV, &sa, NULL) < 0) { // SIGSEVG 시그널 핸들러 등록
@@ -365,11 +370,11 @@ int input()
     return -1;
   }
 
-    sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
-    if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
-      perror("shm_create error");
-      return -1;
-    }
+  sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
+  if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
+    perror("shm_create error");
+    return -1;
+  }
 
   for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
     if ((mqs[i] = mq_open(mq_names[i], O_RDONLY)) < 0) {
