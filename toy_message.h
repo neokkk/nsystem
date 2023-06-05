@@ -5,7 +5,7 @@
 
 #include <unistd.h>
 
-typedef struct {
+typedef struct toy_msg {
   unsigned int msg_type;
   unsigned int param1;
   unsigned int param2;

@@ -1,2 +1,4 @@
 toy_system
 *.o
+*.so
+*.gch

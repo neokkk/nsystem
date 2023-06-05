@@ -5,21 +5,22 @@ UI = ./ui
 WEB_SERVER = ./web_server
 HAL = ./hal
 
-INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL) -Isem -Itimer
+INCLUDES = -I./ -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL)
 
 CC = gcc
 CXX = g++
 CXXLIBS = -lpthread -lm -lrt -lseccomp
 CXXFLAGS = $(INCLUDEDIRS) -g -O0 -std=c++20
 
-objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o shared_memory.o
-cxx_objects = camera_HAL.o ControlThread.o
+objects = main.o system_server.o web_server.o input.o gui.o sem.o timer.o shared_memory.o dump_state.o hardware.o
+cxx_objects = 
+shared_libs = libcamera.oem.so libcamera.toy.so
 
-$(TARGET): $(objects) $(cxx_objects)
+$(TARGET): $(objects) $(cxx_objects) $(shared_libs)
 	$(CXX) -o $(TARGET) $(objects) $(cxx_objects) $(CXXLIBS)
 
-main.o:  main.c
-	$(CC) -g $(INCLUDES) -c main.c main.h
+main.o: main.c
+	$(CC) -g $(INCLUDES) -c main.c
 
 system_server.o: $(SYSTEM)/system_server.h $(SYSTEM)/system_server.c
 	$(CC) -g $(INCLUDES) -c ./system/system_server.c
@@ -42,14 +43,21 @@ timer.o: timer.h timer.c
 shared_memory.o: shared_memory.h shared_memory.c
 	$(CC) -g $(INCLUDES) -c shared_memory.c
 
-camera_HAL.o: $(HAL)/camera_HAL.cpp
-	$(CXX) -g $(INCLUDES) $(CXXFLAGS) -c  $(HAL)/camera_HAL.cpp
+dump_state.o: $(SYSTEM)/dump_state.h $(SYSTEM)/dump_state.c
+	$(CC) -g $(INCLUDES) -c ./system/dump_state.c
 
-ControlThread.o: $(HAL)/ControlThread.cpp
-	$(CXX) -g $(INCLUDES) $(CXXFLAGS) -c  $(HAL)/ControlThread.cpp
+hardware.o: $(HAL)/hardware.c
+	$(CC) -g $(INCLUDES) -c  $(HAL)/hardware.c
+
+.PHONY: libcamera.oem.so
+libcamera.oem.so:
+	$(CC) -g -shared -fPIC -o libcamera.oem.so $(INCLUDES) $(CXXFLAGS) $(HAL)/oem/camera_HAL_oem.cpp $(HAL)/oem/ControlThread.cpp
+
+.PHONY: libcamera.toy.so
+libcamera.toy.so:
+	$(CC) -g -shared -fPIC -o libcamera.toy.so $(INCLUDES) $(CXXFLAGS) $(HAL)/toy/camera_HAL_toy.cpp $(HAL)/toy/ControlThread.cpp
 
 .PHONY: clean
-
 clean:
-	rm -rf *.o
+	rm -rf *.o *.gch
 	rm -rf $(TARGET)

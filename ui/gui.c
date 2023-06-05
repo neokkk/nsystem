@@ -1,7 +1,6 @@
 #include <gui.h>
 
-pid_t create_gui()
-{
+pid_t create_gui() {
   pid_t gui_pid;
   const char* process_name = "gui";
 

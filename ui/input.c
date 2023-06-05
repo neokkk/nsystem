@@ -1,11 +1,13 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
-#define INPUT_THREAD_NUM 2
-#define TOK_BUFSIZE 64
-#define TOK_DELIM " \t\r\n\a"
-#define BUFSIZE 1024
 
 #include <input.h>
+
+#define SHM_KEY_SENSOR 0x1000
+#define TOY_TOK_BUFSIZE 64
+#define TOY_TOK_DELIM " \t\r\n\a"
+#define TOY_BUFFSIZE 1024
+#define DUMP_STATE 2
 
 typedef struct _sig_ucontext {
   unsigned long uc_flags;
@@ -15,213 +17,206 @@ typedef struct _sig_ucontext {
   sigset_t uc_sigmask;
 } sig_ucontext_t;
 
-typedef void* scmp_filter_ctx;
-
 static pthread_mutex_t global_message_mutex = PTHREAD_MUTEX_INITIALIZER;
-static sensor_data_t* sensor_data;
-static mqd_t mqs[QUEUE_NUM];
-static char* mq_names[QUEUE_NUM] = {"/watchdog_queue", "/monitor_queue", "/disk_queue", "/camera_queue"};
-static char global_message[BUFSIZE];
+static char global_message[TOY_BUFFSIZE];
 
-static void sigsegv_handler(int sig_num, siginfo_t* info, void* ucontext)
-{
-  void* array[50];
-  void* caller_address;
-  char** messages;
+static mqd_t watchdog_queue, monitor_queue, disk_queue, camera_queue;
+static sensor_data_t *sensor_info = NULL;
+
+static void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
+  void *array[50];
+  void *caller_address;
+  char **messages;
   int size, i;
-  sig_ucontext_t* uc;
+  sig_ucontext_t *uc;
 
-  uc = (sig_ucontext_t*)ucontext;
-
-  /* Get the address at the time the signal was raised */
-  // caller_address = (void*) uc ->uc_mcontext.x86_64;  // RIP: x86_64 specific     arm_pc: ARM
+  uc = (sig_ucontext_t *)ucontext;
+  // caller_address = (void *) uc->uc_mcontext.rip;
 
   fprintf(stderr, "\n");
 
   if (sig_num == SIGSEGV)
-    printf("signal %d (%s), address is %p from %p\n", sig_num, strsignal(sig_num), info->si_addr,
-           (void*) caller_address);
+    printf("signal %d (%s), address is %p from %p\n", sig_num, strsignal(sig_num), info->si_addr, (void *) caller_address);
   else
     printf("signal %d (%s)\n", sig_num, strsignal(sig_num));
 
   size = backtrace(array, 50);
-  /* overwrite sigaction with caller's address */
-  // array[1] = caller_address;
-  // messages = backtrace_symbols(array, size);
+  array[1] = caller_address;
+  messages = backtrace_symbols(array, size);
 
-  /* skip first stack frame (points here) */
-  // for (i = 1; i < size && messages != NULL; ++i) {
-  //   printf("[bt]: (%d) %s\n", i, messages[i]);
-  // }
+  for (i = 1; i < size && messages != NULL; ++i) {
+    printf("[bt]: (%d) %s\n", i, messages[i]);
+  }
 
-  // free(messages);
-  exit(-1);
+  free(messages);
+  exit(EXIT_FAILURE);
 }
 
-char* builtin_str[] = {
+char *toy_cmd_str[] = {
   "send",
   "mu",
   "sh",
   "mq",
-  "exit",
   "elf",
+  "dump",
   "mincore",
+  "busy",
+  "exit"
 };
 
-int (*builtin_func[])(char**) = {
+int (*toy_cmd_func[]) (char **) = {
   &toy_send,
   &toy_mutex,
   &toy_shell,
   &toy_message_queue,
-  &toy_exit,
   &toy_read_elf_header,
+  &toy_dump_state,
   &toy_mincore,
+  &toy_busy,
+  &toy_exit
 };
 
-int toy_num_builtins()
-{
-  return sizeof(builtin_str) / sizeof(char*);
+int toy_num_builtins() {
+  return sizeof(toy_cmd_str) / sizeof(char *);
 }
 
-int toy_send(char** args)
-{
+int toy_send(char **args) {
   printf("send message: %s\n", args[1]);
-  return 0;
+
+  return 1;
 }
 
-int toy_mutex(char** args)
-{
-  if (args[1] == NULL) {
-    return -1;
-  }
+int toy_mutex(char **args) {
+  if (args[1] == NULL) return 1;
 
   printf("save message: %s\n", args[1]);
-
-  if (pthread_mutex_lock(&global_message_mutex) != 0) {
-    perror("pthread_mutex_lock error");
-    return -1;
-  }
-
+  pthread_mutex_lock(&global_message_mutex);
   strcpy(global_message, args[1]);
-  
-  if (pthread_mutex_unlock(&global_message_mutex)) {
-    perror("pthread_mutex_unlock error");
-    return -1;
-  }
-  
-  return 0;
+  pthread_mutex_unlock(&global_message_mutex);
+  return 1;
 }
 
-int toy_exit(char** args)
-{
-  exit(0);
-}
-
-int toy_shell(char** args)
-{
-  pid_t pid;
-  int status;
-
-  pid = fork();
-  if (pid == 0) {
-    if (execvp(args[0], args) < 0) {
-      perror("execvp error");
-    }
-    exit(-1);
-  } else if (pid < 0) {
-    perror("fork error");
-  } else {
-    do
-    {
-      waitpid(pid, &status, WUNTRACED);
-    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-  }
-
-  return 0;
-}
-
-int toy_message_queue(char** args)
-{
+int toy_message_queue(char **args) {
   int mqretcode;
   toy_msg_t msg;
 
-  if (args[1] == NULL || args[2] == NULL) {
-    return 1;
-  }
+  if (args[1] == NULL || args[2] == NULL) return 1;
 
   if (!strcmp(args[1], "camera")) {
     msg.msg_type = atoi(args[2]);
     msg.param1 = 0;
     msg.param2 = 0;
-    mqretcode = mq_send(mqs[3], (void*)&msg, sizeof(msg), 0);
+    mqretcode = mq_send(camera_queue, (char *)&msg, sizeof(msg), 0);
     assert(mqretcode == 0);
   }
-
-  return 0;
-}
-
-int toy_execute(char** args)
-{
-  int i;
-
-  if (args[0] == NULL) {
-    return -1;
-  }
-
-  for (i = 0; i < toy_num_builtins(); i++) {
-    if (strcmp(args[0], builtin_str[i]) == 0) {
-      return (*builtin_func[i])(args);
-    }
-  }
-
-  return 0;
-}
-
-int toy_read_elf_header(char** args)
-{
-  int mqretcode;
-  toy_msg_t msg;
-  int elf_fd;
-  size_t content_size;
-  struct stat st;
-  Elf64Hdr* map;
-
-  if ((elf_fd = open("./sample/sample.elf", O_RDONLY)) < 0) {
-    printf("cannot open ./sample/sample.elf\n");
-    return -1;
-  }
-  
-  if (fstat(elf_fd, &st) < 0) {
-    perror("cannot stat ./sample/sample.elf\n");
-    return -1;
-  }
-
-  map = (Elf64Hdr*)mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, elf_fd, 0);
-  printf("real size: %ld\n", st.st_size);
-  printf("architecture: %ld\n", map ->e_machine);
-  printf("file type: %ld\n", map ->e_type);
-  printf("file version: %ld\n", map ->e_version);
-  printf("entry point of VA: %ld\n", map ->e_entry);
-  printf("elf header size: %ld\n", map ->e_type);
 
   return 1;
 }
 
-int toy_mincore(char** args)
-{
+int toy_read_elf_header(char **args) {
+  int mqretcode;
+  toy_msg_t msg;
+  int in_fd;
+  char *contents = NULL;
+  size_t contents_sz;
+  struct stat st;
+  Elf64Hdr *map;
+
+  in_fd = open("./sample/sample.elf", O_RDONLY);
+  if (in_fd < 0) {
+    printf("cannot open ./sample/sample.elf\n");
+    return 1;
+  }
+
+  if (!fstat(in_fd, &st)) {
+    contents_sz = st.st_size;
+    if (!contents_sz) {
+      printf("./sample/sample.elf is empty\n");
+      return 1;
+    }
+    printf("real size: %ld\n", contents_sz);
+    map = (Elf64Hdr *)mmap(NULL, contents_sz, PROT_READ, MAP_PRIVATE, in_fd, 0);
+    printf("Object file type : %d\n", map->e_type);
+    printf("Architecture : %d\n", map->e_machine);
+    printf("Object file version : %d\n", map->e_version);
+    printf("Entry point virtual address : %ld\n", map->e_entry);
+    printf("Program header table file offset : %ld\n", map->e_phoff);
+    munmap(map, contents_sz);
+  }
+
+  return 1;
+}
+
+int toy_dump_state(char **args) {
+  int mqretcode;
+  toy_msg_t msg;
+
+  msg.msg_type = DUMP_STATE;
+  msg.param1 = 0;
+  msg.param2 = 0;
+  mqretcode = mq_send(camera_queue, (char *)&msg, sizeof(msg), 0);
+  assert(mqretcode == 0);
+  mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+  assert(mqretcode == 0);
+
+  return 1;
+}
+
+int toy_mincore(char **args) {
   unsigned char vec[20];
   int res;
   size_t page = sysconf(_SC_PAGESIZE);
-  void* addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-  res = mincore(addr, 20 * page, vec);
+  void *addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+  res = mincore(addr, 10 * page, vec);
   assert(res == 0);
 
   return 1;
 }
 
-char* toy_read_line(void)
-{
-  char* line = NULL;
+int toy_busy(char **args) {
+  while (1);
+  return 1;
+}
+
+int toy_exit(char **args) {
+  return 0;
+}
+
+int toy_shell(char **args) {
+  pid_t pid;
+  int status;
+
+  pid = fork();
+  if (pid == 0) {
+    if (execvp(args[0], args) == -1) {
+      perror("toy");
+    }
+    exit(EXIT_FAILURE);
+  } else if (pid < 0) {
+    perror("toy");
+  } else {
+    do {
+      waitpid(pid, &status, WUNTRACED);
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+  }
+
+  return 1;
+}
+
+int toy_execute(char **args) {
+  if (args[0] == NULL) return 1;
+
+  for (int i = 0; i < toy_num_builtins(); i++) {
+    if (strcmp(args[0], toy_cmd_str[i]) == 0) {
+      return (*toy_cmd_func[i])(args);
+    }
+  }
+
+  return 1;
+}
+
+char *toy_read_line(void) {
+  char *line = NULL;
   ssize_t bufsize = 0;
 
   if (getline(&line, &bufsize, stdin) == -1) {
@@ -229,32 +224,31 @@ char* toy_read_line(void)
       exit(EXIT_SUCCESS);
     } else {
       perror(": getline\n");
-      exit(-1);
+      exit(EXIT_FAILURE);
     }
   }
   return line;
 }
 
-char** toy_split_line(char* line)
-{
-  int bufsize = TOK_BUFSIZE, position = 0;
-  char** tokens = malloc(bufsize * sizeof(char*));
+char **toy_split_line(char *line) {
+  int bufsize = TOY_TOK_BUFSIZE, position = 0;
+  char **tokens = malloc(bufsize * sizeof(char *));
   char *token, **tokens_backup;
 
   if (!tokens) {
     fprintf(stderr, "toy: allocation error\n");
-    exit(-1);
+    exit(EXIT_FAILURE);
   }
 
-  token = strtok(line, TOK_DELIM);
+  token = strtok(line, TOY_TOK_DELIM);
   while (token != NULL) {
     tokens[position] = token;
     position++;
 
     if (position >= bufsize) {
-      bufsize += TOK_BUFSIZE;
+      bufsize += TOY_TOK_BUFSIZE;
       tokens_backup = tokens;
-      tokens = realloc(tokens, bufsize * sizeof(char*));
+      tokens = realloc(tokens, bufsize * sizeof(char *));
 
       if (!tokens) {
         free(tokens_backup);
@@ -263,17 +257,16 @@ char** toy_split_line(char* line)
       }
     }
 
-    token = strtok(NULL, TOK_DELIM);
+    token = strtok(NULL, TOY_TOK_DELIM);
   }
 
   tokens[position] = NULL;
   return tokens;
 }
 
-void toy_loop()
-{
-  char* line;
-  char** args;
+void toy_loop(void) {
+  char *line;
+  char **args;
   int status;
 
   do {
@@ -281,116 +274,100 @@ void toy_loop()
     line = toy_read_line();
     args = toy_split_line(line);
     status = toy_execute(args);
-    printf("status: %d\n", status);
-
     free(line);
     free(args);
-  } while (1);
+  } while (status);
 }
 
-int get_shm_id(key_t shm_key, int size) {
-  int shmid;
-  if ((shmid = shmget(shm_key, size, 0666)) < 0) {
-    perror("shmget error");
-    printf("errno: %d\n", errno);
-    exit(-1);
-  }
-  printf("shmid: %d\n", shmid);
-  return shmid;
-}
 
-void* command_thread(void* arg)
-{
-  printf("command thread is running\n");
-  toy_loop();
-  exit(EXIT_SUCCESS);
-}
-
-void* sensor_thread(void* arg)
-{
-  int thread_id = (int)arg;
-  toy_msg_t msg;
-  int semid, shmid;
+void *sensor_thread(void* arg) {
   int mqretcode;
+  char *s = arg;
+  toy_msg_t msg;
 
-  printf("sensor thread is running\n");
-
-  shmid = get_shm_id(SHM_SENSOR_KEY, sizeof(sensor_data_t));
+  printf("%s", s);
 
   while (1) {
-    posix_sleep_ms(5000);
-
-    if (sensor_data == NULL) continue;
-
-    sensor_data ->humidity = rand() % 40;
-    sensor_data ->temperature = rand() % 20 + 20;
-    sensor_data ->pressure = 30;
-
+      posix_sleep_ms(10000);
+    if (sensor_info != NULL) {
+      sensor_info ->temperature = 35;
+      sensor_info ->pressure = 55;
+      sensor_info ->humidity = 80;
+    }
     msg.msg_type = 1;
-    msg.param1 = shmid;
+    msg.param1 = SHM_KEY_SENSOR;
     msg.param2 = 0;
-    mqretcode = mq_send(mqs[1], (char *)&msg, sizeof(msg), 0);
-    printf("sensor data send \n");
+    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
     assert(mqretcode == 0);
   }
+
+  return 0;
 }
 
-int input()
-{
-  pthread_t threads[INPUT_THREAD_NUM];
-  void* (*thread_funcs[INPUT_THREAD_NUM])(void*) = {command_thread, sensor_thread};
+void *command_thread(void* arg) {
+  char *s = arg;
+
+  printf("%s", s);
+  toy_loop();
+
+  return 0;
+}
+
+int input() {
+  int retcode;
   struct sigaction sa;
+  pthread_t command_thread_tid, sensor_thread_tid;
+  int i;
   scmp_filter_ctx ctx;
 
-  sa.sa_flags = SA_RESTART | SA_SIGINFO;
-  sa.sa_sigaction = sigsegv_handler;
+  memset(&sa, 0, sizeof(sigaction));
   sigemptyset(&sa.sa_mask);
+
+  sa.sa_flags = SA_RESTART | SA_SIGINFO;
+  sa.sa_sigaction = segfault_handler;
+  sigaction(SIGSEGV, &sa, NULL);
 
   ctx = seccomp_init(SCMP_ACT_ALLOW);
   if (ctx == NULL) {
-    perror("seccomp_init error\n");
+    printf("seccomp_init failed");
     return -1;
   }
 
-  if (seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0) < 0) {
-    perror("seccomp_rule_add error");
+  int rc = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0);
+  if (rc < 0) {
+    printf("seccomp_rule_add failed");
     return -1;
   }
 
-  if (seccomp_load(ctx) < 0) {
-    seccomp_release(ctx);
-    perror("seccomp_load error");
+  seccomp_export_pfc(ctx, 5);
+  seccomp_export_bpf(ctx, 6);
+
+  rc = seccomp_load(ctx);
+  if (rc < 0) {
+    printf("seccomp_load failed");
     return -1;
   }
-
   seccomp_release(ctx);
 
-  if (sigaction(SIGSEGV, &sa, NULL) < 0) { // SIGSEVG 시그널 핸들러 등록
-    perror("sigaction error");
-    return -1;
+  sensor_info = (sensor_data_t *)shm_create(SHM_KEY_SENSOR, sizeof(sensor_data_t));
+  if (sensor_info == (void *)-1) {
+    sensor_info = NULL;
+    printf("Error in shm_create SHMID=%d SHM_KEY_SENSOR\n", SHM_KEY_SENSOR);
   }
 
-  sensor_data = (sensor_data_t*)shm_create(SHM_SENSOR_KEY, sizeof(sensor_data_t)); // 센서 데이터 공유 메모리 생성
-  if (sensor_data < (void*)0) { // 센서 데이터 공유 메모리 생성
-    perror("shm_create error");
-    return -1;
-  }
+  watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
+  assert(watchdog_queue != -1);
+  monitor_queue = mq_open("/monitor_queue", O_RDWR);
+  assert(monitor_queue != -1);
+  disk_queue = mq_open("/disk_queue", O_RDWR);
+  assert(disk_queue != -1);
+  camera_queue = mq_open("/camera_queue", O_RDWR);
+  assert(camera_queue != -1);
 
-  for (int i = 0; i < QUEUE_NUM; i++) { // 메시지 큐 열기
-    if ((mqs[i] = mq_open(mq_names[i], O_RDONLY)) < 0) {
-      perror("mq_open error");
-      return -1;
-    }
-  }
-
-  for (int i = 0; i < INPUT_THREAD_NUM; i++) {
-    if (pthread_create(&threads[i], NULL, thread_funcs[i], i) != 0) {
-      perror("pthread_create error\n");
-      return -1;
-    }
-  }
-
-  printf("<== system\n");
+  retcode = pthread_create(&command_thread_tid, NULL, command_thread, "command thread\n");
+  assert(retcode == 0);
+  retcode = pthread_create(&sensor_thread_tid, NULL, sensor_thread, "sensor thread\n");
+  assert(retcode == 0);
 
   while (1) {
     sleep(1);
@@ -399,26 +376,22 @@ int input()
   return 0;
 }
 
-pid_t create_input()
-{
+pid_t create_input() {
   pid_t input_pid;
-  const char *process_name = "input";
-
+  const char *name = "input";
+  
   printf("입력 프로세스를 생성합니다.\n");
 
   switch (input_pid = fork()) {
-    case -1:
-      perror("input fork error");
-      exit(-1);
-    case 0:
-      if (prctl(PR_SET_NAME, process_name) < 0) {
-        perror("prctl error");
-        exit(-1);
-      }
-      input();
-      break;
-    default:
-      printf("input pid: %d\n", input_pid);
+  case -1:
+    printf("input fork failed\n");
+  case 0:
+    if (prctl(PR_SET_NAME, (unsigned long)name) < 0)
+        perror("prctl()");
+    input();
+    break;
+  default:
+    break;
   }
 
   return input_pid;

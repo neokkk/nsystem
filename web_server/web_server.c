@@ -1,7 +1,6 @@
 #include <web_server.h>
 
-pid_t create_web_server()
-{
+pid_t create_web_server() {
   pid_t web_pid;
   const char* process_name = "web_server";
 
