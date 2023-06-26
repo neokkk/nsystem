@@ -1,3 +1,10 @@
+#define _POSIX_C_SOURCE 200809L
+
+#include <assert.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+
 #include <common_mq.h>
 
 int open_mq(mqd_t *mq, const char *mq_name, int message_count, int message_size)

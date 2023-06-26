@@ -1,3 +1,12 @@
+#include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/prctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <system_process.h>
 #include <common_mq.h>
 #include <common_timer.h>
@@ -6,11 +15,17 @@
 #define THREAD_NUM 5
 
 static pthread_t tids[THREAD_NUM];
-static void *(*t_funcs[THREAD_NUM])(void *) = {watchdog_thread, monitor_thread, camera_thread, disk_thread, timer_thread};
+static void *(*thread_funcs[THREAD_NUM])(void *) = {
+	watchdog_thread,
+	monitor_thread,
+	camera_thread,
+	disk_thread,
+	timer_thread,
+};
 
 void sigalrm_handler(int sig)
 {
-	printf("SIGALRM caught\n");
+	// printf("SIGALRM caught\n");
 }
 
 /*
@@ -96,7 +111,7 @@ void init_system_process()
 	}
 
 	for (int i = 0; i < THREAD_NUM; i++) {
-		pthread_create(&tids[i], NULL, t_funcs[i], (void *)i);
+		pthread_create(&tids[i], NULL, thread_funcs[i], (void *)i);
 		pthread_detach(tids[i]);
 	}
 
