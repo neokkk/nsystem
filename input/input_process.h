@@ -11,10 +11,10 @@ int command_busy(char **args);
 int command_dump(char **args);
 int command_elf(char **args);
 int command_exit(char **args);
+int command_gpio(char **args);
 int command_mincore(char **args);
 int command_mu(char **args);
 int command_mq(char **args);
-int command_n(char **args);
 int command_send(char **args);
 int command_sh(char **args);
 

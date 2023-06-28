@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,8 @@
 #define ARGS_BUF_SIZE 16
 #define TOKEN_DELIM " \t\n\r"
 
+#define DEVICE_DRIVER "/dev/n_gpio_driver"
+
 #define ERR_UNKNOWN_COMMAND -2
 
 static pthread_t tids[THREAD_NUM];
@@ -26,10 +29,10 @@ char *commands[] = {
     "dump",
     "elf",
     "exit",
+    "gpio",
     "mincore",
     "mq",
 	"mu",
-    "n",
 	"send",
     "sh",
 };
@@ -39,10 +42,10 @@ int (*command_funcs[])(char **args) = {
     &command_dump,
     &command_elf,
     &command_exit,
+    &command_gpio,
     &command_mincore,
     &command_mq,
     &command_mu,
-    &command_n,
     &command_send,
     &command_sh,
 };
@@ -51,63 +54,74 @@ int commands_num() {
     return sizeof(commands) / sizeof(char *);
 }
 
-int command_busy(char **argv)
-{
+int command_busy(char **argv) {
     printf("command busy\n");
     while (1);
     return -1;
 }
 
-int command_dump(char **argv)
-{
+int command_dump(char **argv) {
     printf("command dump\n");
     return 0;
 }
 
-int command_elf(char **argv)
-{
+int command_elf(char **argv) {
     printf("command elf\n");
     return 0;
 }
 
-int command_exit(char **argv)
-{
+int command_exit(char **argv) {
     printf("command exit\n");
     exit(0);
 }
 
-int command_mincore(char **argv)
-{
+int command_gpio(char **argv) {
+    int fd, option = 1;
+
+    printf("command gpio\n");
+
+    if (argv[0] != NULL) {
+        option = atoi(argv[0]);
+    }
+
+    printf("input option: %d\n", option);
+
+    if ((fd = open(DEVICE_DRIVER, O_RDWR | O_NONBLOCK)) < 0) {
+        perror("fail to open n_gpio driver");
+        exit(1);
+    }
+
+    if (write(fd, (void *)&option, 1) < 0) {
+        perror("fail to write to n_gpio driver");
+        exit(1);
+    }
+
+    close(fd);
+
+    return 0;
+}
+
+int command_mincore(char **argv) {
     printf("command mincore\n");
     return 0;
 }
 
-int command_mu(char **argv)
-{
+int command_mu(char **argv) {
     printf("command mu\n");
     return 0;
 }
 
-int command_mq(char **argv)
-{
+int command_mq(char **argv) {
     printf("command mq\n");
     return 0;
 }
 
-int command_n(char **argv)
-{
-    printf("command n\n");
-    return 0;
-}
-
-int command_send(char **argv)
-{
+int command_send(char **argv) {
     printf("command send\n");
     return 0;
 }
 
-int command_sh(char **argv)
-{
+int command_sh(char **argv) {
     pid_t pid;
     int status;
 
@@ -128,8 +142,7 @@ int command_sh(char **argv)
     return 0;
 }
 
-int execute_command(char *command, char** argv)
-{
+int execute_command(char *command, char** argv) {
     for (int i = 0; i < commands_num(); i++) {
         if (strcmp(command, commands[i]) != 0) continue;
         return command_funcs[i](argv);
@@ -138,8 +151,7 @@ int execute_command(char *command, char** argv)
     return ERR_UNKNOWN_COMMAND;
 }
 
-char **parse_args(char *args)
-{
+char **parse_args(char *args) {
     int buf_size = ARGS_BUF_SIZE, position = 0;
     char **buf = (char *)malloc(sizeof(char *) * buf_size), **buf_backup;
     char *token;
@@ -210,6 +222,8 @@ void *command_thread(void *args)
 
 void init_input_process()
 {
+	printf("input_process(%d) created\n", getpid());
+
 	for (int i = 0; i < THREAD_NUM; i++) {
 		pthread_create(&tids[i], NULL, thread_funcs[i], (void *)i);
         pthread_detach(tids[i]);
