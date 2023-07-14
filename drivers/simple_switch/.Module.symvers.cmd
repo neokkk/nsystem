@@ -1,1 +1,0 @@
-cmd_/home/nk/Workspaces/nsystem/drivers/simple_switch/Module.symvers := sed 's/\.ko$$/\.o/' /home/nk/Workspaces/nsystem/drivers/simple_switch/modules.order | scripts/mod/modpost -m -a  -o /home/nk/Workspaces/nsystem/drivers/simple_switch/Module.symvers -e -i Module.symvers   -T -
