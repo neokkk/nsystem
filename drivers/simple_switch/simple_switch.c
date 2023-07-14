@@ -26,7 +26,6 @@
 #define GPIO_INPUT_1 16
 
 #define BUF_SIZE 1024
-#define SHORT_CLICK_MS 1000
 
 #define WAIT_QUEUE_WAIT 0
 #define WAIT_QUEUE_KEY 1
@@ -205,9 +204,9 @@ static struct file_operations fops = {
 	.write = simple_switch_driver_write,
 };
 
-int is_short_click(unsigned long start)
+int is_short_push(unsigned long start, unsigned int ms)
 {
-	return jiffies_to_msecs(jiffies - start) < SHORT_CLICK_MS;
+	return jiffies_to_msecs(jiffies - start) < ms;
 }
 
 void set_bit_led(unsigned char led)
@@ -294,8 +293,9 @@ int wait_thread_fn(void *data)
 
 	while (1) {
 		input = gpio_get_value(GPIO_INPUT_1);
-		if ((state == ST_LIT || state == ST_SHORTSHORT || state == ST_LONGSHORT) && !is_short_click(pre_jiffies)) input = TIMEOUT;
-		else if ((state == ST_LONG || state == ST_SHORT) && jiffies_to_msecs(jiffies - pre_jiffies) >= 500) input = TIMEOUT;
+
+		if ((state == ST_LONG || state == ST_SHORT) && is_short_push(pre_jiffies, 500)) input = TIMEOUT;
+		else if ((state == ST_LIT || state == ST_SHORTSHORT || state == ST_LONGSHORT) && !is_short_push(pre_jiffies, 1000)) input = TIMEOUT;
 
 		actions[transitions[state][input].action]();
 		state = transitions[state][input].next_state;
