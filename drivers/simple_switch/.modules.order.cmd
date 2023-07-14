@@ -1,0 +1,1 @@
+cmd_/home/nk/Workspaces/nsystem/drivers/simple_switch/modules.order := {   echo /home/nk/Workspaces/nsystem/drivers/simple_switch/simple_switch.ko; :; } | awk '!x[$$0]++' - > /home/nk/Workspaces/nsystem/drivers/simple_switch/modules.order
