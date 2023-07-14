@@ -19,69 +19,69 @@
 #define WAIT_QUEUE_EXIT 3
 
 /* left led group */
-#define N_GPIO_OUTPUT_LEFT_1 17
-#define N_GPIO_OUTPUT_LEFT_2 27
-#define N_GPIO_OUTPUT_LEFT_3 22
-#define N_GPIO_OUTPUT_LEFT_4 5
+#define GPIO_OUTPUT_LEFT_1 17
+#define GPIO_OUTPUT_LEFT_2 27
+#define GPIO_OUTPUT_LEFT_3 22
+#define GPIO_OUTPUT_LEFT_4 5
 
 /* right led group */
-#define N_GPIO_OUTPUT_RIGHT_1 6
-#define N_GPIO_OUTPUT_RIGHT_2 26
-#define N_GPIO_OUTPUT_RIGHT_3 23
-#define N_GPIO_OUTPUT_RIGHT_4 24
+#define GPIO_OUTPUT_RIGHT_1 6
+#define GPIO_OUTPUT_RIGHT_2 26
+#define GPIO_OUTPUT_RIGHT_3 23
+#define GPIO_OUTPUT_RIGHT_4 24
 
-#define N_GPIO_INPUT_1 16
+#define GPIO_INPUT_1 16
 
 #define ON 1
 #define OFF 0
 
 #define LEFT_LED_GROUP_ON() \
 do { \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_1, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_2, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_3, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_4, ON); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_1, ON); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_2, ON); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_3, ON); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_4, ON); \
 } while (0)
 
 #define LEFT_LED_GROUP_OFF() \
 do { \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_1, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_2, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_3, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_LEFT_4, OFF); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_1, OFF); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_2, OFF); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_3, OFF); \
+	gpio_set_value(GPIO_OUTPUT_LEFT_4, OFF); \
 } while (0)
 
 #define RIGHT_LED_GROUP_ON() \
 do { \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_1, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_2, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_3, ON); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_4, ON); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_1, ON); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_2, ON); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_3, ON); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_4, ON); \
 } while (0)
 
 #define RIGHT_LED_GROUP_OFF() \
 do { \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_1, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_2, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_3, OFF); \
-	gpio_set_value(N_GPIO_OUTPUT_RIGHT_4, OFF); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_1, OFF); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_2, OFF); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_3, OFF); \
+	gpio_set_value(GPIO_OUTPUT_RIGHT_4, OFF); \
 } while (0)
 
-#define DEVICE_DRIVER "n_gpio_driver"
-#define DEVICE_CLASS "n_gpio_class"
+#define DEVICE_DRIVER "simple_io_driver"
+#define DEVICE_CLASS "simple_io_class"
 
 unsigned int gpio_outputs[] = {
-	N_GPIO_OUTPUT_LEFT_1,
-	N_GPIO_OUTPUT_LEFT_2,
-	N_GPIO_OUTPUT_LEFT_3,
-	N_GPIO_OUTPUT_LEFT_4,
-	N_GPIO_OUTPUT_RIGHT_1,
-	N_GPIO_OUTPUT_RIGHT_2,
-	N_GPIO_OUTPUT_RIGHT_3,
-	N_GPIO_OUTPUT_RIGHT_4,
+	GPIO_OUTPUT_LEFT_1,
+	GPIO_OUTPUT_LEFT_2,
+	GPIO_OUTPUT_LEFT_3,
+	GPIO_OUTPUT_LEFT_4,
+	GPIO_OUTPUT_RIGHT_1,
+	GPIO_OUTPUT_RIGHT_2,
+	GPIO_OUTPUT_RIGHT_3,
+	GPIO_OUTPUT_RIGHT_4,
 };
 unsigned int gpio_inputs[] = {
-	N_GPIO_INPUT_1,
+	GPIO_INPUT_1,
 };
 unsigned gpio_outputs_len = sizeof(gpio_outputs) / sizeof(int);
 unsigned gpio_inputs_len = sizeof(gpio_inputs) / sizeof(int);
@@ -96,24 +96,24 @@ unsigned int input_irq;
 
 DECLARE_WAIT_QUEUE_HEAD(wait_queue);
 
-int n_gpio_driver_open(struct inode *in, struct file *fp)
+int simple_io_driver_open(struct inode *in, struct file *fp)
 {
-	pr_info("n_gpio_driver opened\n");
+	pr_info("simple_io_driver opened\n");
 	return 0;
 }
 
-int n_gpio_driver_close(struct inode *in, struct file *fp)
+int simple_io_driver_close(struct inode *in, struct file *fp)
 {
-	pr_info("n_gpio_driver closed\n");
+	pr_info("simple_io_driver closed\n");
 	return 0;
 }
 
-ssize_t n_gpio_driver_read(struct file *fp, char __user *buf, size_t count, loff_t *offset)
+ssize_t simple_io_driver_read(struct file *fp, char __user *buf, size_t count, loff_t *offset)
 {
 	return 0;
 }
 
-ssize_t n_gpio_driver_write(struct file *fp, const char __user *buf, size_t count, loff_t *offset)
+ssize_t simple_io_driver_write(struct file *fp, const char __user *buf, size_t count, loff_t *offset)
 {
 	if (copy_from_user(kernel_write_buffer, buf, count)) {
 		pr_err("fail to copy buffer from user\n");
@@ -145,10 +145,10 @@ ssize_t n_gpio_driver_write(struct file *fp, const char __user *buf, size_t coun
 
 static struct file_operations fops = {
 	.owner = THIS_MODULE,
-	.open = n_gpio_driver_open,
-	.read = n_gpio_driver_read,
-	.write = n_gpio_driver_write,
-	.release = n_gpio_driver_close,
+	.open = simple_io_driver_open,
+	.read = simple_io_driver_read,
+	.write = simple_io_driver_write,
+	.release = simple_io_driver_close,
 };
 
 /*
@@ -156,7 +156,7 @@ static struct file_operations fops = {
 */
 int pattern_1(void)
 {
-	int led = gpio_get_value(N_GPIO_OUTPUT_LEFT_1);
+	int led = gpio_get_value(GPIO_OUTPUT_LEFT_1);
 	pr_info("LED pattern 1\n");
 
 	while (1) {
@@ -187,7 +187,7 @@ int pattern_1(void)
 */
 int pattern_2(void)
 {
-	int led = gpio_get_value(N_GPIO_OUTPUT_RIGHT_1);
+	int led = gpio_get_value(GPIO_OUTPUT_RIGHT_1);
 	pr_info("LED pattern 2\n");
 
 	while (1) {
@@ -218,7 +218,7 @@ int pattern_2(void)
 */
 int pattern_3(void)
 {
-	int left = gpio_get_value(N_GPIO_OUTPUT_LEFT_1);
+	int left = gpio_get_value(GPIO_OUTPUT_LEFT_1);
 	pr_info("LED pattern 3\n");
 
 	while (1) {
@@ -252,7 +252,7 @@ int pattern_3(void)
 */
 int pattern_4(void)
 {
-	int left = gpio_get_value(N_GPIO_OUTPUT_LEFT_1);
+	int left = gpio_get_value(GPIO_OUTPUT_LEFT_1);
 	pr_info("LED pattern 4\n");
 
 	wait_queue_flag = WAIT_QUEUE_WAIT;
@@ -293,7 +293,7 @@ int pattern_5(void)
 	wait_queue_flag = WAIT_QUEUE_WAIT;
 
 	while (1) {
-		input = gpio_get_value(N_GPIO_INPUT_1);
+		input = gpio_get_value(GPIO_INPUT_1);
 		pr_info("input: %d\n", input);
 
 		if (input == ON) {
@@ -328,13 +328,13 @@ int pattern_6(void)
 	pr_info("LED pattern 6\n");
 	wait_queue_flag = WAIT_QUEUE_WAIT;
 
-	gpio_set_debounce(N_GPIO_INPUT_1, 1000);
+	gpio_set_debounce(GPIO_INPUT_1, 1000);
 
 	while (1) {
 		do {
-			old_input = gpio_get_value(N_GPIO_INPUT_1);
+			old_input = gpio_get_value(GPIO_INPUT_1);
 			usleep_range(1000, 1001);
-			new_input = gpio_get_value(N_GPIO_INPUT_1);
+			new_input = gpio_get_value(GPIO_INPUT_1);
 		} while (old_input == new_input);
 
 		if (new_input == ON) continue;
@@ -388,7 +388,7 @@ int wait_thread_fn(void *data)
 int register_gpio(unsigned gpio, unsigned direction)
 {
 	char name[60];
-	snprintf(name, sizeof(name), "n-gpio-%d", gpio);
+	snprintf(name, sizeof(name), "simple-io-%d", gpio);
 
 	if (gpio_request(gpio, name)) {
 		pr_err("fail to use GPIO %d pin\n", gpio);
@@ -411,11 +411,11 @@ int register_gpio(unsigned gpio, unsigned direction)
 	return 0;
 }
 
-static int __init n_gpio_module_init(void)
+static int __init simple_io_module_init(void)
 {
 	int i;
 
-	pr_info("n_gpio_module init\n");
+	pr_info("simple_io module init\n");
 
 	if (alloc_chrdev_region(&dev, 0, 1, DEVICE_DRIVER) < 0) {
 		pr_err("fail to allocate char device region\n");
@@ -474,14 +474,14 @@ region_error:
 	return -1;
 }
 
-static void __exit n_gpio_module_exit(void)
+static void __exit simple_io_module_exit(void)
 {
 	int i = 0;
 
 	wait_queue_flag = WAIT_QUEUE_EXIT;
 	wake_up_interruptible(&wait_queue);
 
-	gpio_set_value(N_GPIO_INPUT_1, 0);
+	gpio_set_value(GPIO_INPUT_1, 0);
 
 	for (i = 0; i < gpio_outputs_len; i++)
 		gpio_free(gpio_outputs[i]);
@@ -493,11 +493,11 @@ static void __exit n_gpio_module_exit(void)
 	class_destroy(cls);
 	unregister_chrdev_region(dev, 1);
 
-	pr_info("n_gpio_module exit\n");
+	pr_info("simple_io module exit\n");
 }
 
-module_init(n_gpio_module_init);
-module_exit(n_gpio_module_exit);
+module_init(simple_io_module_init);
+module_exit(simple_io_module_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("nk <seven3126@gmail.com>");

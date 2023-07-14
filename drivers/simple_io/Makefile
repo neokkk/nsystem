@@ -1,4 +1,4 @@
-obj-m := n_gpio.o
+obj-m := simple_io.o
 
 export BUILDROOT_DIR=/home/nk/Workspaces/buildroot
 export ARCH=arm64
@@ -14,4 +14,4 @@ modules modules_install help clean:
 
 .PHONY: nfs
 nfs:
-	cp n_gpio.ko ~/Shared
+	cp simple_io.ko ~/Shared

@@ -1,7 +1,7 @@
 {
   "configurations": [
     {
-      "name": "toy_system",
+      "name": "nsystem",
       "type": "cppdbg",
       "request": "launch",
       "program": "${fileDirname}/${fileBasenameNoExtension}",
