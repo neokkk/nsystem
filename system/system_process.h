@@ -1,5 +1,5 @@
-#ifndef _SYSTEM_PROCESS_H
-#define _SYSTEM_PROCESS_H
+#ifndef _SYSTEM_PROCESS_H_
+#define _SYSTEM_PROCESS_H_
 
 pid_t create_system_process();
 void init_system_process();

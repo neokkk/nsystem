@@ -1,5 +1,5 @@
-#ifndef _INPUT_PROCESS_H
-#define _INPUT_PROCESS_H
+#ifndef _INPUT_PROCESS_H_
+#define _INPUT_PROCESS_H_
 
 pid_t create_input_process();
 void init_input_process();

@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -9,6 +10,7 @@
 #include <unistd.h>
 
 #include <input_process.h>
+#include <common_mq.h>
 
 #define THREAD_NUM 2
 #define ARGS_BUF_SIZE 16
@@ -18,7 +20,9 @@
 
 #define ERR_UNKNOWN_COMMAND -2
 
+static mqd_t mqds[MQ_NUM];
 static pthread_t tids[THREAD_NUM];
+
 static void *(*thread_funcs[THREAD_NUM])(void *) = {
     command_thread,
     sensor_thread,
@@ -112,7 +116,23 @@ int command_mu(char **argv) {
 }
 
 int command_mq(char **argv) {
+    int mqretcode;
+    common_msg_t msg;
+
     printf("command mq\n");
+
+    if (argv[0] == NULL) return -1;
+
+    if (!strcmp(argv[0], "camera")) {
+        msg.msg_type = TAKE_PICTURE;
+        msg.param1 = 0;
+        msg.param2 = 0;
+
+        printf("send: %d\n", mqds[CAMERA_QUEUE]);
+        mqretcode = mq_send(mqds[CAMERA_QUEUE], (const char *)&msg, sizeof(msg), 0);
+        assert(mqretcode == 0);
+    }
+
     return 0;
 }
 
@@ -122,8 +142,8 @@ int command_send(char **argv) {
 }
 
 int command_sh(char **argv) {
-    pid_t pid;
     int status;
+    pid_t pid;
 
     printf("command sh\n");
 
@@ -182,7 +202,7 @@ char **parse_args(char *args) {
 
 void *sensor_thread(void *args)
 {
-    printf("sensor thread created\n");
+    printf("[Sensor] thread created\n");
 }
 
 void *command_thread(void *args)
@@ -192,7 +212,7 @@ void *command_thread(void *args)
     int result;
 	size_t len = 0;
 
-    printf("command thread created\n");
+    printf("[Command] thread created\n");
 
     while (1) {
         printf("INPUT> ");
@@ -223,6 +243,8 @@ void *command_thread(void *args)
 void init_input_process()
 {
 	printf("input_process(%d) created\n", getpid());
+
+    mqds[CAMERA_QUEUE] = open_mq("/camera_queue");
 
 	for (int i = 0; i < THREAD_NUM; i++) {
 		pthread_create(&tids[i], NULL, thread_funcs[i], (void *)i);

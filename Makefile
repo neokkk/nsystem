@@ -9,12 +9,13 @@ CXX=${TOOLCHAIN_DIR}/aarch64-buildroot-linux-gnu-g++
 CXXFLAGS = -g -O0 -std=c++20
 CXXLIBS = -lpthread -lm -lrt
 
-INCLUDES = -I./ -I./common -I./input -I./system -I./web
+INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal
 
-OBJS = main.o system_process.o web_process.o input_process.o common_timer.o common_mq.o
-TARGET = toyy
+OBJS = main.o system_process.o web_process.o input_process.o common_timer.o common_mq.o hardware.o
+SHARED_LIBS = libcamera.oema.so libcamera.oemb.so
+TARGET = nsystem
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) $(SHARED_LIBS)
 	$(CXX) -o $(TARGET) $(OBJS) $(CXXLIBS)
 	$(MAKE) modules
 
@@ -36,8 +37,19 @@ common_timer.o: ./common/common_timer.c
 common_mq.o: ./common/common_mq.c
 	$(CC) -g -c $< $(INCLUDES)
 
+hardware.o: ./hal/hardware.c
+	$(CC) -g -c $< $(INCLUDES)
+
 # %.o: %.c
 # 	$(CC) -g -c $< -o $@ $(INCLUDES)
+
+.PHONY: libcamera.oema.so
+libcamera.oema.so:
+	$(CXX) -o libcamera.oema.so -shared -fPIC $(CXXFLAGS) ./hal/oem_a/camera_HAL_oem.cpp ./hal/oem_a/ControlThread.cpp $(INCLUDES)
+
+.PHONY: libcamera.oemb.so
+libcamera.oemb.so:
+	$(CXX) -o libcamera.oemb.so -shared -fPIC $(CXXFLAGS) ./hal/oem_b/camera_HAL_oem.cpp ./hal/oem_b/ControlThread.cpp $(INCLUDES)
 
 .PHONY: modules
 modules:

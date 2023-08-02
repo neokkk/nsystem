@@ -7,7 +7,7 @@
 
 #include <common_mq.h>
 
-int open_mq(mqd_t *mq, const char *mq_name, int message_count, int message_size)
+mqd_t create_mq(const char *mq_name, int message_count, int message_size)
 {
     mqd_t mq_tmp;
     struct mq_attr mq_attr;
@@ -25,7 +25,21 @@ int open_mq(mqd_t *mq, const char *mq_name, int message_count, int message_size)
         return 0;
     }
 
+	printf("%s is created\n", mq_name);
+    return mq_tmp;
+}
+
+mqd_t open_mq(const char *mq_name)
+{
+    mqd_t mq_tmp;
+
+    if ((mq_tmp = mq_open(mq_name, O_RDWR)) < 0) return -1;
+
 	printf("%s is opened\n", mq_name);
-    *mq = mq_tmp;
+    return mq_tmp;
+}
+
+int close_mq(mqd_t mqd) {
+    if (mq_close(mqd) < 0) return -1;
     return 0;
 }
