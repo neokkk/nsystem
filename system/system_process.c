@@ -1,16 +1,23 @@
 #include <assert.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <system_process.h>
+#include <dump_state.h>
 #include <hardware.h>
 #include <common_mq.h>
+#include <common_shm.h>
 #include <common_timer.h>
 
 #define THREAD_NUM 5
@@ -28,7 +35,7 @@ static void *(*thread_funcs[THREAD_NUM])(void *) = {
 
 void sigalrm_handler(int sig)
 {
-	// printf("SIGALRM caught\n");
+	// printf("[Timer] caught SIGALRM\n");
 }
 
 /*
@@ -36,10 +43,41 @@ void sigalrm_handler(int sig)
 */
 void *timer_thread(void *arg)
 {
-	printf("[Timer] thread created\n");
+	printf("[Timer] created thread\n");
 
 	signal(SIGALRM, sigalrm_handler);
 	set_periodic_timer(1, 0);
+}
+
+long get_directory_size(char *dirname)
+{
+	DIR *dir = opendir(dirname);
+	if (dir == 0)
+		return 0;
+
+	struct dirent *dit;
+	struct stat st;
+	long size = 0;
+	long total_size = 0;
+	char filePath[1024];
+
+	while ((dit = readdir(dir)) != NULL) {
+		if ((strcmp(dit->d_name, ".") == 0) || (strcmp(dit->d_name, "..") == 0))
+			continue;
+
+		sprintf(filePath, "%s/%s", dirname, dit->d_name);
+		if (lstat(filePath, &st) != 0)
+			continue;
+		size = st.st_size;
+
+		if (S_ISDIR(st.st_mode)) {
+			long dir_size = get_directory_size(filePath) + size;
+			total_size += dir_size;
+		} else {
+			total_size += size;
+		}
+	}
+	return total_size;
 }
 
 /*
@@ -47,7 +85,7 @@ void *timer_thread(void *arg)
 */
 void *disk_thread(void *arg)
 {
-	printf("[Disk] thread created\n");
+	printf("[Disk] created thread\n");
 }
 
 void *camera_thread(void *arg)
@@ -56,7 +94,7 @@ void *camera_thread(void *arg)
 	common_msg_t msg;
 	hw_module_t *module;
 
-	printf("[Camera] thread created\n");
+	printf("[Camera] created thread\n");
 
 	halretcode = get_camera_module((const hw_module_t **)&module);
 	assert(halretcode == 0);
@@ -68,12 +106,7 @@ void *camera_thread(void *arg)
 
 		switch (msg.msg_type) {
 			case TAKE_PICTURE:
-				printf("[Camera] take picture!\n");
 				module->take_picture();
-				break;
-			case DUMP_STATE:
-				printf("[Camera] dump state\n");
-				module->dump();
 				break;
 			default:
 				printf("[Camera] unknown message type\n");
@@ -82,49 +115,70 @@ void *camera_thread(void *arg)
 }
 
 /*
- * 센서 데이터 모니터링 스레드
+ * 데이터 수신 스레드
 */
 void *monitor_thread(void *arg)
 {
+	int shm_fd;
 	common_msg_t msg;
+	sensor_info_t *bmp_info;
 
-	printf("[Monitor] thread created\n");
+	printf("[Monitor] created thread\n");
+
+	shm_fd = open_shm(shm_names[BMP280]);
+	if (shm_fd < 0) {
+		perror("[Monitor] fail to open shared memory");
+		exit(EXIT_FAILURE);
+	}
+
+	bmp_info = (sensor_info_t *)mmap(NULL, sizeof(sensor_info_t), PROT_READ, MAP_SHARED, shm_fd, 0);
+	if (bmp_info == MAP_FAILED) {
+		perror("[Monitor] fail to allocate shared memory");
+		goto err;
+	}
 
 	while (1) {
-		if ((int)mq_receive(mqds[1], (void *)&msg, sizeof(msg), 0) < 0) {
-			perror("fail to receive monitor message");
-			exit(1);
+		if ((int)mq_receive(mqds[MONITOR_QUEUE], (void *)&msg, sizeof(msg), 0) < 0) {
+			perror("[Monitor] fail to receive message");
+			goto err;
 		}
-
-		printf("[Monitor] received message_type: %d, param1: %d, param2: %d, param3: %d\n", msg.msg_type, msg.param1, msg.param2, (int)msg.param3);
 
 		switch (msg.msg_type) {
 			case SENSOR_DATA:
+				printf("[Monitor] temperature: %f°C\n", bmp_info->temp);
+				printf("[Monitor] pressure: %fhPa\n", bmp_info->press);
 				break;
 			case DUMP_STATE:
+				dump_state();
 				break;
 			default:
-				perror("unknown message type\n");
+				perror("[Monitor] unknown message type\n");
 		}
 	}
+
+err:
+	shm_unlink(shm_names[BMP280]);
+	munmap(bmp_info, sizeof(sensor_info_t));
+	exit(EXIT_FAILURE);
 }
 
 /*
- * 메시지 수신 스레드
+ * 시스템 정보 수집 스레드
 */
 void *watchdog_thread(void *arg)
 {
 	common_msg_t msg;
 
-	printf("[Watchdog] thread created\n");
+	printf("[Watchdog] created thread\n");
 	
 	while (1) {
 		if ((int)mq_receive(mqds[WATCHDOG_QUEUE], (void *)&msg, sizeof(msg), 0) < 0) {
-			perror("fail to receive watchdog message");
+			perror("[Watchdog] fail to receive message");
 			exit(1);
 		}
 
-		printf("[Watchdog] recieved message_type: %d, param1: %d, param2: %d\n", msg.msg_type, msg.param1, msg.param2);
+		printf("[Watchdog] recieved message_type: %d, param1: %d, param2: %d\n",
+			msg.msg_type, msg.param1, msg.param2);
 	}
 }
 

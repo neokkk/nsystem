@@ -11,7 +11,7 @@ CXXLIBS = -lpthread -lm -lrt
 
 INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal
 
-OBJS = main.o system_process.o web_process.o input_process.o common_timer.o common_mq.o hardware.o
+OBJS = main.o system_process.o web_process.o input_process.o common_timer.o common_mq.o common_shm.o dump_state.o hardware.o
 SHARED_LIBS = libcamera.oema.so libcamera.oemb.so
 TARGET = nsystem
 
@@ -25,6 +25,9 @@ main.o: main.c
 system_process.o: ./system/system_process.c
 	$(CC) -g -c $< $(INCLUDES)
 
+dump_state.o: ./system/dump_state.c
+	$(CC) -g -c $< $(INCLUDES)
+
 web_process.o: ./web/web_process.c
 	$(CC) -g -c $< $(INCLUDES)
 
@@ -35,6 +38,9 @@ common_timer.o: ./common/common_timer.c
 	$(CC) -g -c $< $(INCLUDES)
 
 common_mq.o: ./common/common_mq.c
+	$(CC) -g -c $< $(INCLUDES)
+
+common_shm.o: ./common/common_shm.c
 	$(CC) -g -c $< $(INCLUDES)
 
 hardware.o: ./hal/hardware.c
@@ -53,12 +59,12 @@ libcamera.oemb.so:
 
 .PHONY: modules
 modules:
-	$(MAKE) -C ./drivers
+	$(MAKE) -C ./drivers/**
 
 .PHONY: nfs
 nfs:
-	cp $(TARGET) ~/Shared
-	$(MAKE) -C ./drivers nfs
+	cp $(TARGET) libcamera.so ~/Shared
+	$(MAKE) -C ./drivers/** nfs
 
 .PHONY: clean
 clean:

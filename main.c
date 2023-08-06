@@ -6,10 +6,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <common_mq.h>
 #include <input_process.h>
 #include <system_process.h>
 #include <web_process.h>
+#include <common_mq.h>
+#include <common_shm.h>
 
 #define PROCESS_NUM 3
 
@@ -21,7 +22,6 @@ static pid_t (*p_funcs[])() = {
 	create_web_process,
 	create_input_process,
 };
-
 
 void sigchld_handler(int sig)
 {
@@ -44,9 +44,12 @@ void sigchld_handler(int sig)
 
 int main()
 {
-	int i;
+	int i, bmp_shm_fd;
 
 	signal(SIGCHLD, sigchld_handler);
+
+	bmp_shm_fd = create_shm(shm_names[BMP280]);
+	ftruncate(bmp_shm_fd, sizeof(sensor_info_t));
 
 	for (i = 0; i < MQ_NUM; i++) {
 		mqds[i] = create_mq(mq_names[i], MSG_COUNT, sizeof(common_msg_t));

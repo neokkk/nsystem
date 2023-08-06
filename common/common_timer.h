@@ -1,5 +1,5 @@
-#ifndef _COMMON_TIMER_H
-#define _COMMON_TIMER_H
+#ifndef _COMMON_TIMER_H_
+#define _COMMON_TIMER_H_
 
 #define USEC_PER_SECOND         1000000  /* one million */ 
 #define USEC_PER_MILLISEC       1000     /* one thousand */
