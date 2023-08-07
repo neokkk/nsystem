@@ -16,6 +16,7 @@
 #include <system_process.h>
 #include <dump_state.h>
 #include <hardware.h>
+#include <sensor_info.h>
 #include <common_mq.h>
 #include <common_shm.h>
 #include <common_timer.h>
@@ -115,7 +116,7 @@ void *camera_thread(void *arg)
 }
 
 /*
- * 데이터 수신 스레드
+ * 센서 데이터 수신 스레드
 */
 void *monitor_thread(void *arg)
 {
@@ -158,7 +159,7 @@ void *monitor_thread(void *arg)
 
 err:
 	shm_unlink(shm_names[BMP280]);
-	munmap(bmp_info, sizeof(sensor_info_t));
+	munmap(shm_fd, sizeof(sensor_info_t));
 	exit(EXIT_FAILURE);
 }
 

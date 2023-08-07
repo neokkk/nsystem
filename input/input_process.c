@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
@@ -15,6 +16,7 @@
 #include <unistd.h>
 
 #include <input_process.h>
+#include <sensor_info.h>
 #include <common_mq.h>
 #include <common_shm.h>
 
@@ -24,8 +26,12 @@
 #define BUF_SIZE 1024
 #define TOKEN_DELIM " \t\n\r"
 
-#define GPIO_DRIVER "/dev/n_gpio_driver"
+#define ENGINE_DRIVER "/dev/engine_driver"
+#define SIMPLE_IO_DRIVER "/dev/simple_io_driver"
 #define SENSOR_SYSFS_NOTYFY "/sys/kernel/bmp280/notify"
+
+#define MOTOR_1_SET_SPEED _IOW('w', '1', int32_t *)
+#define MOTOR_2_SET_SPEED _IOW('w', '2', int32_t *)
 
 #define ERR_UNKNOWN_COMMAND -2
 
@@ -44,11 +50,13 @@ char *commands[] = {
     "dump",
     "elf",
     "exit",
-    "gpio",
+    "m1",
+    "m2",
     "mincore",
     "mq",
 	"mu",
     "sh",
+    "sio",
 };
 
 int (*command_funcs[])(char **args) = {
@@ -56,30 +64,30 @@ int (*command_funcs[])(char **args) = {
     &command_dump,
     &command_elf,
     &command_exit,
-    &command_gpio,
+    &command_set_motor_1_speed,
+    &command_set_motor_2_speed,
     &command_mincore,
     &command_mq,
     &command_mu,
     &command_sh,
+    &command_simple_io,
 };
 
-int commands_num() {
-    return sizeof(commands) / sizeof(char *);
-}
+int commands_len = sizeof(commands) / sizeof(char *);
 
-int command_busy(char **argv) {
+int command_busy(char **argv)
+{
     printf("command busy\n");
     while (1);
     return -1;
 }
 
-int command_dump(char **argv) {
+int command_dump(char **argv)
+{
     int mqretcode;
     common_msg_t msg;
 
     printf("command dump\n");
-    printf("sizeof struct common_msg_t: %d\n", sizeof(common_msg_t));
-    printf("sizeof struct msg: %d\n", sizeof(msg));
 
     msg.msg_type = DUMP_STATE;
     msg.param1 = 0;
@@ -91,34 +99,67 @@ int command_dump(char **argv) {
     return 0;
 }
 
-int command_elf(char **argv) {
+int command_elf(char **argv)
+{
     printf("command elf\n");
+
+    int fd;
+    char *contents = NULL;
+    size_t contents_len;
+    struct stat st;
+    Elf64Hdr *map;
+
+    fd = open("./sample/sample.elf", O_RDONLY);
+	if (fd < 0) {
+        printf("fail to open sample.elf\n");
+        return -1;
+    }
+
+    if (!fstat(fd, &st)) {
+        contents_len = st.st_size;
+        if (!contents_len) {
+            printf("empty file!");
+            goto err;
+        }
+        printf("File size: %ld\n", contents_len);
+        map = (Elf64Hdr *)mmap(NULL, contents_len, PROT_READ, MAP_PRIVATE, fd, 0);
+        printf("Object file type: %d\n", map->e_type);
+        printf("Architecture: %d\n", map->e_machine);
+        printf("Object file version: %d\n", map->e_version);
+        printf("Entry point virtual address: %ld\n", map->e_entry);
+        printf("Program header table file offset: %ld\n", map->e_phoff);
+        munmap(map, contents_len);
+    }
+
     return 0;
+
+err:
+    close(fd);
+    return -1;
 }
 
-int command_exit(char **argv) {
+int command_exit(char **argv)
+{
     printf("command exit\n");
     exit(0);
 }
 
-int command_gpio(char **argv) {
-    int fd, option = 1;
+int command_set_motor_1_speed(char **argv)
+{
+    int fd, speed;
 
-    printf("command gpio\n");
+    if (argv[0] == NULL) return -1;
 
-    if (argv[0] != NULL) {
-        option = atoi(argv[0]);
+    speed = atoi(argv[0]);
+    printf("speed: %d\n", speed);
+
+    if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
+        perror("fail to open engine driver");
+        return -1;
     }
 
-    printf("input option: %d\n", option);
-
-    if ((fd = open(GPIO_DRIVER, O_RDWR | O_NONBLOCK)) < 0) {
-        perror("fail to open n_gpio driver");
-        goto err;
-    }
-
-    if (write(fd, (void *)&option, 1) < 0) {
-        perror("fail to write to n_gpio driver");
+    if (ioctl(fd, MOTOR_1_SET_SPEED, speed) < 0) {
+        perror("fail to set speed of motor 1");
         goto err;
     }
 
@@ -127,7 +168,34 @@ int command_gpio(char **argv) {
 
 err:
     close(fd);
-    exit(1);
+    return -1;
+}
+
+int command_set_motor_2_speed(char **argv)
+{
+    int fd, speed;
+
+    if (argv[0] == NULL) return -1;
+
+    speed = atoi(argv[0]);
+    printf("speed: %d\n", speed);
+
+    if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
+        perror("fail to open engine driver");
+        return -1;
+    }
+
+    if (ioctl(fd, MOTOR_2_SET_SPEED, speed) < 0) {
+        perror("fail to set speed of motor 2");
+        goto err;
+    }
+
+    close(fd);
+    return 0;
+
+err:
+    close(fd);
+    return -1;
 }
 
 int command_mincore(char **argv) {
@@ -166,11 +234,6 @@ int command_mq(char **argv) {
     return 0;
 }
 
-int command_send(char **argv) {
-    printf("command send\n");
-    return 0;
-}
-
 int command_sh(char **argv) {
     int status;
     pid_t pid;
@@ -192,8 +255,38 @@ int command_sh(char **argv) {
     return 0;
 }
 
+int command_simple_io(char **argv)
+{
+    int fd, option = 1;
+
+    printf("command simple_io\n");
+
+    if (argv[0] != NULL) {
+        option = atoi(argv[0]);
+    }
+
+    printf("input option: %d\n", option);
+
+    if ((fd = open(SIMPLE_IO_DRIVER, O_RDWR | O_NONBLOCK)) < 0) {
+        perror("fail to open simple_io driver");
+        goto err;
+    }
+
+    if (write(fd, (void *)&option, 1) < 0) {
+        perror("fail to write to simple_io driver");
+        goto err;
+    }
+
+    close(fd);
+    return 0;
+
+err:
+    close(fd);
+    exit(1);
+}
+
 int execute_command(char *command, char** argv) {
-    for (int i = 0; i < commands_num(); i++) {
+    for (int i = 0; i < commands_len; i++) {
         if (strcmp(command, commands[i]) != 0) continue;
         return command_funcs[i](argv);
     }
@@ -279,7 +372,9 @@ void *sensor_thread(void *args)
         msg.param2 = 0;
 
         mqretcode = mq_send(mqds[MONITOR_QUEUE], (const char *)&msg, sizeof(msg), 0);
-        perror("mqretcode");
+        if (mqretcode < 0) {
+            perror("[Sensor] fail to send to monitor thread");
+        }
         sleep(10);
     }
 

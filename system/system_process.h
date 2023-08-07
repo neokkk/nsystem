@@ -11,5 +11,6 @@ void *monitor_thread(void *);
 void *watchdog_thread(void *);
 
 void sigalrm_handler(int sig);
+long get_directory_size(char *dirname);
 
 #endif

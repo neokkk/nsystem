@@ -11,7 +11,16 @@ CXXLIBS = -lpthread -lm -lrt
 
 INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal
 
-OBJS = main.o system_process.o web_process.o input_process.o common_timer.o common_mq.o common_shm.o dump_state.o hardware.o
+OBJS = main.o \
+	system_process.o \
+	web_process.o \
+	input_process.o \
+	common_timer.o \
+	common_mq.o \
+	common_shm.o \
+	dump_state.o \
+	hardware.o
+
 SHARED_LIBS = libcamera.oema.so libcamera.oemb.so
 TARGET = nsystem
 
@@ -46,9 +55,6 @@ common_shm.o: ./common/common_shm.c
 hardware.o: ./hal/hardware.c
 	$(CC) -g -c $< $(INCLUDES)
 
-# %.o: %.c
-# 	$(CC) -g -c $< -o $@ $(INCLUDES)
-
 .PHONY: libcamera.oema.so
 libcamera.oema.so:
 	$(CXX) -o libcamera.oema.so -shared -fPIC $(CXXFLAGS) ./hal/oem_a/camera_HAL_oem.cpp ./hal/oem_a/ControlThread.cpp $(INCLUDES)
@@ -59,14 +65,17 @@ libcamera.oemb.so:
 
 .PHONY: modules
 modules:
-	$(MAKE) -C ./drivers/**
+	$(MAKE) -C ./drivers/bmp280 modules
+	$(MAKE) -C ./drivers/engine modules
 
 .PHONY: nfs
 nfs:
 	cp $(TARGET) libcamera.so ~/Shared
-	$(MAKE) -C ./drivers/** nfs
+	$(MAKE) -C ./drivers/bmp280 nfs
+	$(MAKE) -C ./drivers/engine nfs
 
 .PHONY: clean
 clean:
 	rm -rf $(TARGET) *.o **/*.o
-	$(MAKE) -C ./drivers clean
+	$(MAKE) -C ./drivers/bmp280 clean
+	$(MAKE) -C ./drivers/engine clean

@@ -11,6 +11,7 @@
 #include <web_process.h>
 #include <common_mq.h>
 #include <common_shm.h>
+#include <sensor_info.h>
 
 #define PROCESS_NUM 3
 
