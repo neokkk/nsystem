@@ -15,6 +15,9 @@ install: modules_install
 modules modules_install help clean:
 	$(MAKE) -C $(KERNEL_DIR) M=$(shell pwd) $@
 
-.PHONY: nfs clean
+.PHONY: nfs cp
 nfs:
 	cp engine.ko ~/Shared
+
+cp:
+	cp engine.ko ../../

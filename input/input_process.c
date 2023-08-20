@@ -34,7 +34,7 @@
 
 #define MOSQ_HOST "192.168.31.128"
 // #define MOSQ_HOST "43.201.208.243"
-#define MOSQ_PORT 1884
+#define MOSQ_PORT 1883
 #define MOSQ_TOPIC "motor"
 
 #define MOTOR_1_SET_SPEED _IOW('w', '1', int32_t *)
@@ -163,15 +163,28 @@ int command_exit(char **argv)
 int set_motor_speed(int ioc, int speed)
 {
     int fd;
+    unsigned long _ioc;
 
-    printf("set motor speed: %d\n", speed);
+    switch (ioc) {
+        case 1:
+            _ioc = MOTOR_1_SET_SPEED;
+            break;
+        case 2:
+            _ioc = MOTOR_2_SET_SPEED;
+            break;
+        default:
+            printf("unknown ioc\n");
+            return -1;
+    }
+
+    printf("set motor %d speed: %d\n", ioc, speed);
 
     if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
         perror("fail to open engine driver");
         goto err;
     }
 
-    if (ioctl(fd, ioc, speed) < 0) {
+    if (ioctl(fd, _ioc, speed) < 0) {
         perror("fail to set motor speed");
         goto err;
     }

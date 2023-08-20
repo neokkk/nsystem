@@ -4,7 +4,6 @@
 typedef struct sensor_info {
   float temp;
   float press;
-  float humid;
 } sensor_info_t;
 
 #endif

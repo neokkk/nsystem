@@ -27,8 +27,8 @@
 
 #define MOSQ_HOST "192.168.31.128"
 // #define MOSQ_HOST "43.201.208.243"
-#define MOSQ_PORT 1884
-#define MSQT_TOPIC "sensor"
+#define MOSQ_PORT 1883
+#define MOSQ_TOPIC "sensor"
 
 static mqd_t mqds[MQ_NUM];
 static pthread_t tids[THREAD_NUM];
@@ -174,7 +174,7 @@ void *monitor_thread(void *arg)
 			case SENSOR_DATA:
 				printf("[Monitor] temperature: %f°C\n", bmp_info->temp);
 				printf("[Monitor] pressure: %fhPa\n", bmp_info->press);
-				retcode = mosquitto_publish(mosq, NULL, MSQT_TOPIC, sizeof(sensor_info_t), bmp_info, 0, false);
+				retcode = mosquitto_publish(mosq, NULL, MOSQ_TOPIC, sizeof(sensor_info_t), bmp_info, 0, false);
 				if (retcode) {
 					perror("[Monitor] fail to publish topic");
 				}

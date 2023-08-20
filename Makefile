@@ -8,7 +8,7 @@ CC = gcc
 CXX = g++
 
 CXXFLAGS = -g -O0 -std=c++20
-CXXLIBS = -lpthread -lm -lrt -lmosquitto
+CXXLIBS = -lpthread -lm -lrt -ldl -lmosquitto
 
 INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal -I./include
 
@@ -80,3 +80,8 @@ clean:
 	rm -rf $(TARGET) *.o **/*.o
 	$(MAKE) -C ./drivers/bmp280 clean
 	$(MAKE) -C ./drivers/engine clean
+
+.PHONY: cp
+cp:
+	$(MAKE) -C ./drivers/bmp280 cp
+	$(MAKE) -C ./drivers/engine cp

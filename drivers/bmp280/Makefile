@@ -15,6 +15,9 @@ install: modules_install
 modules modules_install help clean:
 	$(MAKE) -C $(KERNEL_DIR) M=$(shell pwd) $@
 
-.PHONY: nfs
+.PHONY: nfs cp
 nfs:
 	cp bmp280.ko ~/Shared
+
+cp:
+	cp bmp280.ko ../../
