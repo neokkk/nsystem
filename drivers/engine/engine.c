@@ -170,6 +170,7 @@ ssize_t write_engine_driver(struct file *file, const char __user *buf, size_t co
 
 long ioctl_engine_driver(struct file *file, unsigned int cmd, unsigned long args)
 {
+	("ioctl here %d: %d\n", cmd, args);
 	switch (cmd) {
 		case MOTOR_1_SET_SPEED:
 			pr_info("[%s] motor 1 set speed: %d\n", DEVICE_NAME, args);
@@ -219,14 +220,16 @@ struct sysfs_ops sfops = {
 	.store = store_engine_class,
 };
 
-struct attribute *attrs[] = {
+struct attribute *engine_attrs[] = {
 	&motor_1.attr,
 	&motor_2.attr,
 	NULL,
 };
 
+ATTRIBUTE_GROUPS(engine);
+
 struct kobj_type ktype = {
-	.default_attrs = attrs,
+	.default_groups = engine_groups,
 	.sysfs_ops = &sfops,
 };
 

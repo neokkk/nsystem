@@ -213,11 +213,13 @@ struct file_operations fops = {
 	.release = close_device,
 };
 
-struct attribute *attrs[] = {
+struct attribute *bmp_attrs[] = {
 	&notify.attr,
 	&trigger.attr,
 	NULL,
 };
+
+ATTRIBUTE_GROUPS(bmp);
 
 struct sysfs_ops sfops = {
 	.show = show_kobj,
@@ -226,7 +228,7 @@ struct sysfs_ops sfops = {
 
 struct kobj_type ktype = {
 	.sysfs_ops = &sfops,
-	.default_attrs = attrs,
+	.default_groups = bmp_groups,
 };
 
 static int __init bmp_module_init(void)
