@@ -10,7 +10,7 @@ CXX = g++
 CXXFLAGS = -g -O0 -std=c++20
 CXXLIBS = -lpthread -lm -lrt -lmosquitto
 
-INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal
+INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal -I./include
 
 OBJS = main.o \
 	system_process.o \
