@@ -1,10 +1,13 @@
 obj-m += bmp280.o
 
-export BUILDROOT_DIR=/home/nk/Workspaces/buildroot
-export ARCH=arm64
-export CROSS_COMPILE=$(BUILDROOT_DIR)/output/host/bin/aarch64-buildroot-linux-gnu-
+kernel_version := $(shell uname -r)
 
-KERNEL_DIR ?= $(BUILDROOT_DIR)/output/build/linux-custom
+# export BUILDROOT_DIR=/home/nk/Workspaces/buildroot
+# export ARCH=arm64
+# export CROSS_COMPILE=$(BUILDROOT_DIR)/output/host/bin/aarch64-buildroot-linux-gnu-
+
+# KERNEL_DIR ?= $(BUILDROOT_DIR)/output/build/linux-custom
+KERNEL_DIR ?= /lib/modules/$(kernel_version)/build
 
 all default: modules
 install: modules_install

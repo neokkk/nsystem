@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <mosquitto.h>
+#include <mqtt_protocol.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -23,8 +25,14 @@
 
 #define THREAD_NUM 5
 
+#define MOSQ_HOST "192.168.31.128"
+// #define MOSQ_HOST "43.201.208.243"
+#define MOSQ_PORT 1884
+#define MSQT_TOPIC "sensor"
+
 static mqd_t mqds[MQ_NUM];
 static pthread_t tids[THREAD_NUM];
+static struct mosquitto *mosq;
 
 static void *(*thread_funcs[THREAD_NUM])(void *) = {
 	watchdog_thread,
@@ -115,12 +123,17 @@ void *camera_thread(void *arg)
 	}
 }
 
+void mosq_disconnect_callback(struct mosquitto *_mosq, void *userdata, int result, const mosquitto_property *props)
+{
+	printf("[Monitor] mosquitto session disconnected %d\n", result);
+}
+
 /*
  * 센서 데이터 수신 스레드
 */
 void *monitor_thread(void *arg)
 {
-	int shm_fd;
+	int shm_fd, retcode;
 	common_msg_t msg;
 	sensor_info_t *bmp_info;
 
@@ -130,6 +143,19 @@ void *monitor_thread(void *arg)
 	if (shm_fd < 0) {
 		perror("[Monitor] fail to open shared memory");
 		exit(EXIT_FAILURE);
+	}
+
+	mosq = mosquitto_new(NULL, true, NULL);
+	if (!mosq) {
+		perror("[Monitor] fail to create session");
+		goto err;
+	}
+
+	retcode = mosquitto_connect(mosq, MOSQ_HOST, MOSQ_PORT, 0);
+	printf("[Monitor] mosquitto_connect result: %d\n", retcode);
+	if (retcode) {
+		perror("[Monitor] fail to connect to broker");
+		goto err;
 	}
 
 	bmp_info = (sensor_info_t *)mmap(NULL, sizeof(sensor_info_t), PROT_READ, MAP_SHARED, shm_fd, 0);
@@ -148,6 +174,10 @@ void *monitor_thread(void *arg)
 			case SENSOR_DATA:
 				printf("[Monitor] temperature: %f°C\n", bmp_info->temp);
 				printf("[Monitor] pressure: %fhPa\n", bmp_info->press);
+				retcode = mosquitto_publish(mosq, NULL, MSQT_TOPIC, sizeof(sensor_info_t), bmp_info, 0, false);
+				if (retcode) {
+					perror("[Monitor] fail to publish topic");
+				}
 				break;
 			case DUMP_STATE:
 				dump_state();
@@ -160,6 +190,7 @@ void *monitor_thread(void *arg)
 err:
 	shm_unlink(shm_names[BMP280]);
 	munmap(shm_fd, sizeof(sensor_info_t));
+	mosquitto_disconnect(mosq);
 	exit(EXIT_FAILURE);
 }
 

@@ -2,6 +2,8 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <mosquitto.h>
+#include <mqtt_protocol.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -20,7 +22,7 @@
 #include <common_mq.h>
 #include <common_shm.h>
 
-#define THREAD_NUM 2
+#define THREAD_NUM 3
 #define POLLFD_NUM 1
 #define ARGS_BUF_SIZE 16
 #define BUF_SIZE 1024
@@ -30,6 +32,11 @@
 #define SIMPLE_IO_DRIVER "/dev/simple_io_driver"
 #define SENSOR_SYSFS_NOTYFY "/sys/kernel/bmp280/notify"
 
+#define MOSQ_HOST "192.168.31.128"
+// #define MOSQ_HOST "43.201.208.243"
+#define MOSQ_PORT 1884
+#define MOSQ_TOPIC "motor"
+
 #define MOTOR_1_SET_SPEED _IOW('w', '1', int32_t *)
 #define MOTOR_2_SET_SPEED _IOW('w', '2', int32_t *)
 
@@ -38,11 +45,18 @@
 static mqd_t mqds[MQ_NUM];
 static pthread_t tids[THREAD_NUM];
 static sensor_info_t *bmp_info;
+struct mosquitto *mosq;
 static int bmp_shm_fd;
 
-static void *(*thread_funcs[THREAD_NUM])(void *) = {
+struct motor_input {
+    int num;
+    int speed;
+};
+
+static void *(*thread_funcs[])(void *) = {
     command_thread,
     sensor_thread,
+    mosq_thread,
 };
 
 char *commands[] = {
@@ -101,7 +115,7 @@ int command_dump(char **argv)
 
 int command_elf(char **argv)
 {
-    printf("command elf\n");
+    printf("[Command] elf\n");
 
     int fd;
     char *contents = NULL;
@@ -111,16 +125,17 @@ int command_elf(char **argv)
 
     fd = open("./sample/sample.elf", O_RDONLY);
 	if (fd < 0) {
-        printf("fail to open sample.elf\n");
+        printf("[Command] fail to open sample.elf\n");
         return -1;
     }
 
     if (!fstat(fd, &st)) {
         contents_len = st.st_size;
         if (!contents_len) {
-            printf("empty file!");
+            printf("[Command] empty file\n");
             goto err;
         }
+        printf("===========================");
         printf("File size: %ld\n", contents_len);
         map = (Elf64Hdr *)mmap(NULL, contents_len, PROT_READ, MAP_PRIVATE, fd, 0);
         printf("Object file type: %d\n", map->e_type);
@@ -128,6 +143,7 @@ int command_elf(char **argv)
         printf("Object file version: %d\n", map->e_version);
         printf("Entry point virtual address: %ld\n", map->e_entry);
         printf("Program header table file offset: %ld\n", map->e_phoff);
+        printf("===========================");
         munmap(map, contents_len);
     }
 
@@ -140,71 +156,62 @@ err:
 
 int command_exit(char **argv)
 {
-    printf("command exit\n");
+    printf("[Command] exit\n");
     exit(0);
+}
+
+int set_motor_speed(int ioc, int speed)
+{
+    int fd;
+
+    printf("set motor speed: %d\n", speed);
+
+    if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
+        perror("fail to open engine driver");
+        goto err;
+    }
+
+    if (ioctl(fd, ioc, speed) < 0) {
+        perror("fail to set motor speed");
+        goto err;
+    }
+
+    return 0;
+
+err:
+    close(fd);
+    return -1;
 }
 
 int command_set_motor_1_speed(char **argv)
 {
-    int fd, speed;
+    int speed;
 
     if (argv[0] == NULL) return -1;
 
     speed = atoi(argv[0]);
-    printf("speed: %d\n", speed);
 
-    if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
-        perror("fail to open engine driver");
-        return -1;
-    }
-
-    if (ioctl(fd, MOTOR_1_SET_SPEED, speed) < 0) {
-        perror("fail to set speed of motor 1");
-        goto err;
-    }
-
-    close(fd);
-    return 0;
-
-err:
-    close(fd);
-    return -1;
+    return set_motor_speed(MOTOR_1_SET_SPEED, speed);
 }
 
 int command_set_motor_2_speed(char **argv)
 {
-    int fd, speed;
+    int speed;
 
     if (argv[0] == NULL) return -1;
 
     speed = atoi(argv[0]);
-    printf("speed: %d\n", speed);
 
-    if ((fd = open(ENGINE_DRIVER, O_RDWR | O_NDELAY)) < 0) {
-        perror("fail to open engine driver");
-        return -1;
-    }
-
-    if (ioctl(fd, MOTOR_2_SET_SPEED, speed) < 0) {
-        perror("fail to set speed of motor 2");
-        goto err;
-    }
-
-    close(fd);
-    return 0;
-
-err:
-    close(fd);
-    return -1;
+    return set_motor_speed(MOTOR_2_SET_SPEED, speed);
 }
 
 int command_mincore(char **argv) {
-    printf("command mincore\n");
+    printf("[Command] mincore\n");
     return 0;
 }
 
 int command_mu(char **argv) {
-    printf("command mu\n");
+    printf("[Command] mu\n");
     return 0;
 }
 
@@ -212,7 +219,7 @@ int command_mq(char **argv) {
     int mqretcode;
     common_msg_t msg;
 
-    printf("command mq\n");
+    printf("[Command] mq\n");
 
     if (argv[0] == NULL) return -1;
 
@@ -227,7 +234,7 @@ int command_mq(char **argv) {
 
         mqretcode = mq_send(mqds[CAMERA_QUEUE], (const char *)&msg, sizeof(msg), 0);
         if (mqretcode != 0) {
-            perror("fail to send message to camera thread");
+            perror("[Command] fail to send message to camera thread");
         }
     }
 
@@ -238,11 +245,11 @@ int command_sh(char **argv) {
     int status;
     pid_t pid;
 
-    printf("command sh\n");
+    printf("[Command] sh\n");
 
     switch (pid = fork()) {
         case -1:
-            perror("fail to fork shell");
+            perror("[Command] fail to fork shell");
             break;
         case 0:
             execvp("sh", argv);
@@ -259,21 +266,21 @@ int command_simple_io(char **argv)
 {
     int fd, option = 1;
 
-    printf("command simple_io\n");
+    printf("[Command] simple_io\n");
 
     if (argv[0] != NULL) {
         option = atoi(argv[0]);
     }
 
-    printf("input option: %d\n", option);
+    printf("[Command] input option: %d\n", option);
 
     if ((fd = open(SIMPLE_IO_DRIVER, O_RDWR | O_NONBLOCK)) < 0) {
-        perror("fail to open simple_io driver");
+        perror("[Command] fail to open simple_io driver");
         goto err;
     }
 
     if (write(fd, (void *)&option, 1) < 0) {
-        perror("fail to write to simple_io driver");
+        perror("[Command] fail to write to simple_io driver");
         goto err;
     }
 
@@ -311,7 +318,7 @@ char **parse_args(char *args) {
 
             if (!buf) {
                 free(buf_backup);
-                perror("fail to realloc for args buffer");
+                perror("[Command] fail to realloc for args buffer");
                 exit(1);
             }
         }
@@ -323,12 +330,74 @@ char **parse_args(char *args) {
     return buf;
 }
 
+void mosq_connect_callback(struct mosquitto *msq, void *obj, int result, int flags, const mosquitto_property *props)
+{
+    printf("[MOSQ] connected %d\n", result);
+}
+
+void mosq_message_callback(struct mosquitto *msq, void *obj, const struct mosquitto_message *mosq_msg, const mosquitto_property *props)
+{
+    int retcode;
+    struct motor_input *motor_input;
+
+    printf("[MOSQ] messaged\n");
+
+    motor_input = (struct motor_input *)mosq_msg->payload;
+    retcode = set_motor_speed(motor_input->num, motor_input->speed);
+    if (retcode < 0) {
+        perror("[MOSQ] fail to set motor speed");
+    }
+}
+
+void *mosq_thread(void *args)
+{
+    int retcode;
+
+    printf("[MOSQ] create threaded\n");
+
+    mosq = mosquitto_new(NULL, true, NULL);
+    if (!mosq) {
+        perror("[MOSQ] fail to create session");
+        goto err;
+    }
+
+    retcode = mosquitto_connect(mosq, MOSQ_HOST, MOSQ_PORT, 60);
+	printf("[MOSQ] mosquitto_connect result: %d\n", retcode);
+
+    if (retcode) {
+        perror("[MOSQ] fail to connect to broker");
+        goto err;
+    }
+
+    mosquitto_connect_callback_set(mosq, mosq_connect_callback);
+    mosquitto_message_callback_set(mosq, mosq_message_callback);
+    mosquitto_subscribe(mosq, NULL, MOSQ_TOPIC, 0);
+
+    while (1) {
+        retcode = mosquitto_loop(mosq, -1, 1);
+        if (retcode < 0) {
+            perror("[MOSQ] fail to loop connection");
+            break;
+        }
+        if (retcode != 0) {
+            perror("[MOSQ] try to reconnect");
+            sleep(10);
+            mosquitto_reconnect(mosq);
+        }
+    }
+
+err:
+    mosquitto_destroy(mosq);
+    exit(1);
+}
+
 void *sensor_thread(void *args)
 {
     int fd, nread, retfdnum, mqretcode;
     float temp, press;
     char buf[BUF_SIZE];
     struct pollfd pfds[POLLFD_NUM];
+    struct mosquitto *mosq;
     common_msg_t msg;
 
     printf("[Sensor] created thread\n");
@@ -343,6 +412,11 @@ void *sensor_thread(void *args)
 
     bmp_shm_fd = open_shm(shm_names[BMP280]);
     bmp_info = (sensor_info_t *)mmap(NULL, sizeof(sensor_info_t), PROT_READ | PROT_WRITE, MAP_SHARED, bmp_shm_fd, 0);
+
+    if (bmp_info == MAP_FAILED) {
+        perror("[Sensor] fail to map shared memory");
+        goto err;
+    }
 
     msg.msg_type = SENSOR_DATA;
 
@@ -399,7 +473,7 @@ void *command_thread(void *args)
         printf("INPUT> ");
     
         if (getline(&line, &len, stdin) < 0) {
-            perror("fail to read from stdin");
+            perror("[Command] fail to read from stdin");
             exit(1);
         }
         if (strcmp(line, "\n") == 0) continue;
@@ -409,10 +483,10 @@ void *command_thread(void *args)
 
         if (result < 0) {
             if (result == ERR_UNKNOWN_COMMAND) {
-                printf("unknown command\n");
+                printf("[Command] unknown command\n");
                 continue;
             }
-            printf("fail to execute %s\n", argv[0]);
+            printf("[Command] fail to execute %s\n", argv[0]);
             continue;
         }
     }
@@ -426,11 +500,6 @@ void init_input_process()
     int i;
 
 	printf("input_process(%d) created\n", getpid());
-
-    if (bmp_info == MAP_FAILED) {
-        perror("fail to allocate shared memory");
-        exit(EXIT_FAILURE);
-    }
 
     for (i = 0; i < MQ_NUM; i++) {
         mqds[i] = open_mq(mq_names[i]);

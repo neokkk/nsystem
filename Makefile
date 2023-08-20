@@ -1,13 +1,14 @@
 BUILDROOT_DIR=/home/nk/Workspaces/buildroot
 TOOLCHAIN_DIR=${BUILDROOT_DIR}/output/host/bin
 
-CC=${TOOLCHAIN_DIR}/aarch64-buildroot-linux-gnu-gcc
-CXX=${TOOLCHAIN_DIR}/aarch64-buildroot-linux-gnu-g++
+# CC=${TOOLCHAIN_DIR}/aarch64-buildroot-linux-gnu-gcc
+# CXX=${TOOLCHAIN_DIR}/aarch64-buildroot-linux-gnu-g++
 
-# CC = gcc
-# CXX = g++
+CC = gcc
+CXX = g++
+
 CXXFLAGS = -g -O0 -std=c++20
-CXXLIBS = -lpthread -lm -lrt
+CXXLIBS = -lpthread -lm -lrt -lmosquitto
 
 INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal
 
@@ -70,7 +71,7 @@ modules:
 
 .PHONY: nfs
 nfs:
-	cp $(TARGET) libcamera.so ~/Shared
+	cp $(TARGET) run.sh libcamera.so libmosquitto.so.1 libssl.so.3 libcrypto.so.3 ~/Shared
 	$(MAKE) -C ./drivers/bmp280 nfs
 	$(MAKE) -C ./drivers/engine nfs
 

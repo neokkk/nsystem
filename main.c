@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <mosquitto.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ int main()
 
 	bmp_shm_fd = create_shm(shm_names[BMP280]);
 	ftruncate(bmp_shm_fd, sizeof(sensor_info_t));
+	mosquitto_lib_init();
 
 	for (i = 0; i < MQ_NUM; i++) {
 		mqds[i] = create_mq(mq_names[i], MSG_COUNT, sizeof(common_msg_t));
@@ -63,9 +65,22 @@ int main()
 	for (i = 0; i < PROCESS_NUM; i++) {
 		if (waitpid(pids[i], NULL, 0) < 0) {
 			perror("fail to wait child process");
-			exit(1);
+			goto err;
 		}
 	}
 
+	for (i = 0; i < MQ_NUM; i++) {
+		close_mq(mq_names[i]);
+	}
+	mosquitto_lib_cleanup();
+	close_shm(shm_names[BMP280]);
 	return 0;
+
+err:
+	for (i = 0; i < MQ_NUM; i++) {
+		close_mq(mq_names[i]);
+	}
+	mosquitto_lib_cleanup();
+	close_shm(shm_names[BMP280]);
+	return 1;
 }
