@@ -9,19 +9,17 @@
 
 #include <input_process.h>
 #include <system_process.h>
-#include <web_process.h>
 #include <common_mq.h>
 #include <common_shm.h>
 #include <sensor_info.h>
 
-#define PROCESS_NUM 3
+#define PROCESS_NUM 2
 
 static mqd_t mqds[MQ_NUM];
 static pid_t pids[PROCESS_NUM];
 
 static pid_t (*p_funcs[])() = {
 	create_system_process,
-	create_web_process,
 	create_input_process,
 };
 

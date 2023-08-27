@@ -170,7 +170,6 @@ ssize_t write_engine_driver(struct file *file, const char __user *buf, size_t co
 
 long ioctl_engine_driver(struct file *file, unsigned int cmd, unsigned long args)
 {
-	("ioctl here %d: %d\n", cmd, args);
 	switch (cmd) {
 		case MOTOR_1_SET_SPEED:
 			pr_info("[%s] motor 1 set speed: %d\n", DEVICE_NAME, args);
@@ -438,6 +437,6 @@ module_init(engine_module_init);
 module_exit(engine_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("nk <seven3126@naver.com>");
+MODULE_AUTHOR("nk <seven3126@gmail.com>");
 MODULE_DESCRIPTION("motor engine driver");
 MODULE_VERSION("1.0.0");

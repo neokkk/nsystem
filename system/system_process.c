@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -19,44 +20,30 @@
 #include <dump_state.h>
 #include <hardware.h>
 #include <sensor_info.h>
+#include <system_info.h>
 #include <common_mq.h>
 #include <common_shm.h>
 #include <common_timer.h>
 
-#define THREAD_NUM 5
+#define THREAD_NUM 4
+#define BUF_SIZE 1024
 
 #define MOSQ_HOST "192.168.31.128"
-// #define MOSQ_HOST "43.201.208.243"
 #define MOSQ_PORT 1883
-#define MOSQ_TOPIC "sensor"
+#define MOSQ_TOPIC_SENSOR "sensor"
+#define MOSQ_TOPIC_SYSTEM "system"
 
 static mqd_t mqds[MQ_NUM];
 static pthread_t tids[THREAD_NUM];
 static struct mosquitto *mosq;
+static system_info_t system_info;
 
 static void *(*thread_funcs[THREAD_NUM])(void *) = {
 	watchdog_thread,
 	monitor_thread,
 	camera_thread,
 	disk_thread,
-	timer_thread,
 };
-
-void sigalrm_handler(int sig)
-{
-	// printf("[Timer] caught SIGALRM\n");
-}
-
-/*
- * 인터벌 타이머 스레드
-*/
-void *timer_thread(void *arg)
-{
-	printf("[Timer] created thread\n");
-
-	signal(SIGALRM, sigalrm_handler);
-	set_periodic_timer(1, 0);
-}
 
 long get_directory_size(char *dirname)
 {
@@ -71,12 +58,10 @@ long get_directory_size(char *dirname)
 	char filePath[1024];
 
 	while ((dit = readdir(dir)) != NULL) {
-		if ((strcmp(dit->d_name, ".") == 0) || (strcmp(dit->d_name, "..") == 0))
-			continue;
-
+		if ((strcmp(dit->d_name, ".") == 0) || (strcmp(dit->d_name, "..") == 0)) continue;
 		sprintf(filePath, "%s/%s", dirname, dit->d_name);
-		if (lstat(filePath, &st) != 0)
-			continue;
+
+		if (lstat(filePath, &st) != 0) continue;
 		size = st.st_size;
 
 		if (S_ISDIR(st.st_mode)) {
@@ -89,6 +74,186 @@ long get_directory_size(char *dirname)
 	return total_size;
 }
 
+int get_sys_info(system_info_t *sys_info)
+{
+	FILE *fp;
+	char *line = NULL, model[SYS_NAME];
+	size_t len, cores = 0;
+	ssize_t nread;
+
+	if ((fp = fopen("/proc/cpuinfo", "r")) == NULL) {
+		perror("fail to open /proc/cpuinfo");
+		return -1;
+	}
+
+	while ((nread = getline(&line, &len, fp)) != -1) {
+		if (strncmp(line, "processor", 9) == 0) {
+			cores += 1;
+			continue;
+		}
+
+		if (strncmp(line, "Model", 5) != 0) continue;
+		sscanf(line, "Model : %127[^\n] ", model);
+		break;
+	}
+
+	sys_info->cores = cores;
+	strncpy(sys_info->name, model, strlen(model) + 1);
+	printf("model: %s\n", model);
+	printf("cores: %d\n", cores);
+
+	fclose(fp);
+	free(line);
+
+	return 0;
+}
+
+int get_proc_info(proc_info_t *proc_info)
+{
+	int fd;
+	char buf[BUF_SIZE];
+	ssize_t nread;
+
+	if ((fd = open("/proc/loadavg", O_RDONLY)) < 0) {
+		perror("fail to open /proc/loadavg");
+		return -1;
+	}
+
+	if ((nread = read(fd, buf, sizeof(buf))) < 0) {
+		perror("fail to read /proc/loadavg");
+		goto err;
+	}
+
+	sscanf(buf, "%f %f %*f %d/%d",
+		&proc_info->load_avg_for_1, &proc_info->load_avg_for_5, &proc_info->running, &proc_info->total);
+
+	close(fd);
+	return 0;
+
+err:
+	close(fd);
+	return -1;
+}
+
+int get_mem_info(mem_info_t *mem_info)
+{
+	FILE *fp;
+	char *line = NULL;
+	size_t len;
+	ssize_t nread;
+
+	if ((fp = fopen("/proc/meminfo", "r")) == NULL) {
+		perror("fail to read /proc/meminfo");
+		return -1;
+	}
+
+	while ((nread = getline(&line, &len, fp)) != -1) {
+		if (strncmp(line, "MemTotal", 8) == 0) {
+			sscanf(line, "MemTotal: %llu ", &mem_info->total);
+			continue;
+		}
+		if (strncmp(line, "MemAvailable", 12) == 0) {
+			sscanf(line, "MemAvailable: %llu ", &mem_info->available);
+			continue;
+		}
+		if (strncmp(line, "Active", 6) == 0) {
+			sscanf(line, "Active: %llu ", &mem_info->active);
+			continue;
+		}
+		if (strncmp(line, "Inactive", 8) == 0) {
+			sscanf(line, "Inactive: %llu ", &mem_info->inactive);
+			continue;
+		}
+		if (strncmp(line, "SwapTotal", 9) == 0) {
+			sscanf(line, "SwapTotal: %llu ", &mem_info->swapped);
+			continue;
+		}
+		if (strncmp(line, "Mapped", 6) == 0) {
+			sscanf(line, "Mapped: %llu ", &mem_info->mapped);
+			break;
+		}
+	}
+
+	fclose(fp);
+	free(line);
+
+	return 0;
+}
+
+int get_disk_info(disk_info_t *disk_info)
+{
+	struct statvfs svfs;
+
+	if (statvfs("/", &svfs) == 0) {
+		strncpy(disk_info->mount, "/", 1);
+		disk_info->total = (unsigned long long)svfs.f_blocks * svfs.f_frsize / 1024;
+		disk_info->used = (unsigned long long)(svfs.f_blocks - svfs.f_bfree) * svfs.f_frsize / 1024;
+	}
+
+	return 0;
+}
+
+int get_engine_info(engine_info_t *engine_info)
+{
+	int fd, speed;
+
+	if ((fd = open("/sys/kernel/engine/motor_1", O_RDONLY)) < 0) {
+		perror("fail to open motor_1");
+		return -1;
+	}
+
+	if (read(&speed, sizeof(speed), fd) < 0) {
+		perror("fail to read motor_1 speed");
+		goto err;
+	}
+
+	engine_info->motor_1_speed = speed;
+	close(fd);
+
+	if ((fd = open("/sys/kernel/engine/motor_2", O_RDONLY)) < 0) {
+		perror("fail to open motor_2");
+		return -1;
+	}
+
+	if (read(&speed, sizeof(speed), fd) < 0) {
+		perror("fail to read motor_2 speed");
+		goto err;
+	}
+
+	engine_info->motor_2_speed = speed;
+	close(fd);
+
+	return 0;
+
+err:
+	close(fd);
+	return -1;
+}
+
+int get_system_info()
+{
+	printf("get_system_info\n");
+	get_sys_info(&system_info);
+	get_proc_info(&system_info.process);
+	get_mem_info(&system_info.memory);
+	get_disk_info(&system_info.disk);
+	system_info.engine.motor_1_speed = 500;
+	system_info.engine.motor_2_speed = 500;
+	// get_engine_info(&system_info.engine);
+	return 0;
+}
+
+void stringify_system_info(char *buf)
+{
+	sprintf(buf, 
+		"{\"name\":\"%s\",\"cores\":%d,\"engine\":{\"motor_1_speed\":%d,\"motor_2_speed\":%d},\"process\":{\"total\":%d,\"running\":%d,\"load_avg_for_1\":%f,\"load_avg_for_5\":%f},\"memory\":{\"total\":%llu,\"available\":%llu,\"active\":%llu,\"inactive\":%llu,\"swapped\":%llu,\"mapped\":%llu},\"disk\":{\"mount\":\"%s\",\"total\":%llu,\"used\":%llu}}",
+		system_info.name, system_info.cores,
+		system_info.engine.motor_1_speed, system_info.engine.motor_2_speed,
+		system_info.process.total, system_info.process.running, system_info.process.load_avg_for_1, system_info.process.load_avg_for_5,
+		system_info.memory.total, system_info.memory.available, system_info.memory.active, system_info.memory.inactive, system_info.memory.swapped, system_info.memory.mapped,
+		system_info.disk.mount, system_info.disk.total, system_info.disk.used);
+}
+
 /*
  * 파일 이벤트 수신 스레드
 */
@@ -97,6 +262,9 @@ void *disk_thread(void *arg)
 	printf("[Disk] created thread\n");
 }
 
+/*
+ * 카메라 이벤트 수신 스레드
+*/
 void *camera_thread(void *arg)
 {
 	int mqretcode, halretcode;
@@ -145,19 +313,6 @@ void *monitor_thread(void *arg)
 		exit(EXIT_FAILURE);
 	}
 
-	mosq = mosquitto_new(NULL, true, NULL);
-	if (!mosq) {
-		perror("[Monitor] fail to create session");
-		goto err;
-	}
-
-	retcode = mosquitto_connect(mosq, MOSQ_HOST, MOSQ_PORT, 0);
-	printf("[Monitor] mosquitto_connect result: %d\n", retcode);
-	if (retcode) {
-		perror("[Monitor] fail to connect to broker");
-		goto err;
-	}
-
 	bmp_info = (sensor_info_t *)mmap(NULL, sizeof(sensor_info_t), PROT_READ, MAP_SHARED, shm_fd, 0);
 	if (bmp_info == MAP_FAILED) {
 		perror("[Monitor] fail to allocate shared memory");
@@ -172,9 +327,8 @@ void *monitor_thread(void *arg)
 
 		switch (msg.msg_type) {
 			case SENSOR_DATA:
-				printf("[Monitor] temperature: %f°C\n", bmp_info->temp);
-				printf("[Monitor] pressure: %fhPa\n", bmp_info->press);
-				retcode = mosquitto_publish(mosq, NULL, MOSQ_TOPIC, sizeof(sensor_info_t), bmp_info, 0, false);
+				printf("[Monitor] temperature: %f°C, pressure: %fhPa\n", bmp_info->temp, bmp_info->press);
+				retcode = mosquitto_publish(mosq, NULL, MOSQ_TOPIC_SENSOR, sizeof(sensor_info_t), bmp_info, 0, false);
 				if (retcode) {
 					perror("[Monitor] fail to publish topic");
 				}
@@ -190,8 +344,22 @@ void *monitor_thread(void *arg)
 err:
 	shm_unlink(shm_names[BMP280]);
 	munmap(shm_fd, sizeof(sensor_info_t));
-	mosquitto_disconnect(mosq);
 	exit(EXIT_FAILURE);
+}
+
+
+void sigalrm_handler(int sig)
+{
+	char buf[4096];
+	int retcode;
+	printf("[Watchdog] caught SIGALRM\n");
+	get_system_info();
+	stringify_system_info(buf);
+	retcode = mosquitto_publish(mosq, NULL, MOSQ_TOPIC_SYSTEM, strlen(buf), buf, 0, false);
+	printf("[Watchdog] mosquitto retcode: %d\n", retcode);
+	if (retcode) {
+		perror("[Watchdog] fail to publish topic");
+	}
 }
 
 /*
@@ -199,26 +367,32 @@ err:
 */
 void *watchdog_thread(void *arg)
 {
+	int retcode;
 	common_msg_t msg;
 
 	printf("[Watchdog] created thread\n");
 	
-	while (1) {
-		if ((int)mq_receive(mqds[WATCHDOG_QUEUE], (void *)&msg, sizeof(msg), 0) < 0) {
-			perror("[Watchdog] fail to receive message");
-			exit(1);
-		}
-
-		printf("[Watchdog] recieved message_type: %d, param1: %d, param2: %d\n",
-			msg.msg_type, msg.param1, msg.param2);
-	}
+	signal(SIGALRM, sigalrm_handler);
+	set_periodic_timer(5, 0);
 }
 
 void init_system_process()
 {
-	int i;
+	int i, retcode;
 
 	printf("system_process(%d) created\n", getpid());
+	mosq = mosquitto_new(NULL, true, NULL);
+
+	if (!mosq) {
+		perror("fail to create session");
+		goto err;
+	}
+
+	retcode = mosquitto_connect(mosq, MOSQ_HOST, MOSQ_PORT, 0);
+	if (retcode) {
+		perror("fail to connect to mqtt broker");
+		goto err;
+	}
 
 	for (i = 0; i < MQ_NUM; i++) {
 		mqds[i] = open_mq(mq_names[i]);
@@ -231,6 +405,9 @@ void init_system_process()
 
 	while (1)
 		sleep(1);
+
+err:
+	mosquitto_disconnect(mosq);
 }
 
 pid_t create_system_process()

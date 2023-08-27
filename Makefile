@@ -10,11 +10,10 @@ CXX = g++
 CXXFLAGS = -g -O0 -std=c++20
 CXXLIBS = -lpthread -lm -lrt -ldl -lmosquitto
 
-INCLUDES = -I./ -I./common -I./input -I./system -I./web -I./hal -I./include
+INCLUDES = -I./ -I./common -I./input -I./system -I./hal -I./include
 
 OBJS = main.o \
 	system_process.o \
-	web_process.o \
 	input_process.o \
 	common_timer.o \
 	common_mq.o \
@@ -36,9 +35,6 @@ system_process.o: ./system/system_process.c
 	$(CC) -g -c $< $(INCLUDES)
 
 dump_state.o: ./system/dump_state.c
-	$(CC) -g -c $< $(INCLUDES)
-
-web_process.o: ./web/web_process.c
 	$(CC) -g -c $< $(INCLUDES)
 
 input_process.o: ./input/input_process.c

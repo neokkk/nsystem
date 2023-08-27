@@ -33,7 +33,6 @@
 #define SENSOR_SYSFS_NOTYFY "/sys/kernel/bmp280/notify"
 
 #define MOSQ_HOST "192.168.31.128"
-// #define MOSQ_HOST "43.201.208.243"
 #define MOSQ_PORT 1883
 #define MOSQ_TOPIC "motor"
 
