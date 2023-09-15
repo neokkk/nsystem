@@ -3,4 +3,4 @@ System application for embedded
 
 ## Architecture
 
-![image](https://github.com/neokkk/nsystem/assets/35194760/38ae9e7a-3157-4b8d-b9a5-0189142ce73c)
+![image](https://github.com/neokkk/nsystem/assets/35194760/5ee1a473-4ca7-47b6-91dd-1623162dfe1e)
