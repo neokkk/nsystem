@@ -14,6 +14,7 @@ install: modules_install
 
 modules modules_install help clean:
 	$(MAKE) -C $(KERNEL_DIR) M=$(shell pwd) $@
+	$(MAKE) cp
 
 .PHONY: nfs cp
 nfs:

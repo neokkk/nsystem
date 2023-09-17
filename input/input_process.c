@@ -32,9 +32,9 @@
 #define SIMPLE_IO_DRIVER "/dev/simple_io_driver"
 #define SENSOR_SYSFS_NOTYFY "/sys/kernel/bmp280/notify"
 
-#define MOSQ_HOST "192.168.31.128"
+#define MOSQ_HOST "192.168.31.182"
 #define MOSQ_PORT 1883
-#define MOSQ_TOPIC "motor"
+#define MOSQ_TOPIC_MOTOR "motor"
 
 #define MOTOR_1_SET_SPEED _IOW('w', '1', int32_t *)
 #define MOTOR_2_SET_SPEED _IOW('w', '2', int32_t *)
@@ -201,6 +201,8 @@ int command_set_motor_1_speed(char **argv)
 
     if (argv[0] == NULL) return -1;
 
+    printf("[Command] motor_1\n");
+
     speed = atoi(argv[0]);
 
     return set_motor_speed(MOTOR_1_SET_SPEED, speed);
@@ -211,6 +213,8 @@ int command_set_motor_2_speed(char **argv)
     int speed;
 
     if (argv[0] == NULL) return -1;
+
+    printf("[Command] motor_2\n");
 
     speed = atoi(argv[0]);
 
@@ -342,12 +346,12 @@ char **parse_args(char *args) {
     return buf;
 }
 
-void mosq_connect_callback(struct mosquitto *msq, void *obj, int result, int flags, const mosquitto_property *props)
+void mosq_connect_callback(struct mosquitto *msq, void *obj, int result)
 {
     printf("[MOSQ] connected %d\n", result);
 }
 
-void mosq_message_callback(struct mosquitto *msq, void *obj, const struct mosquitto_message *mosq_msg, const mosquitto_property *props)
+void mosq_message_callback(struct mosquitto *msq, void *obj, const struct mosquitto_message *mosq_msg)
 {
     int retcode;
     struct motor_input *motor_input;
@@ -365,7 +369,7 @@ void *mosq_thread(void *args)
 {
     int retcode;
 
-    printf("[MOSQ] create threaded\n");
+    printf("[MOSQ] create thread\n");
 
     mosq = mosquitto_new(NULL, true, NULL);
     if (!mosq) {
@@ -383,7 +387,7 @@ void *mosq_thread(void *args)
 
     mosquitto_connect_callback_set(mosq, mosq_connect_callback);
     mosquitto_message_callback_set(mosq, mosq_message_callback);
-    mosquitto_subscribe(mosq, NULL, MOSQ_TOPIC, 0);
+    mosquitto_subscribe(mosq, NULL, MOSQ_TOPIC_MOTOR, 0);
 
     while (1) {
         retcode = mosquitto_loop(mosq, -1, 1);

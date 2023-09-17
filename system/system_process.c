@@ -28,7 +28,7 @@
 #define THREAD_NUM 4
 #define BUF_SIZE 1024
 
-#define MOSQ_HOST "192.168.31.128"
+#define MOSQ_HOST "192.168.31.182"
 #define MOSQ_PORT 1883
 #define MOSQ_TOPIC_SENSOR "sensor"
 #define MOSQ_TOPIC_SYSTEM "system"
@@ -197,12 +197,12 @@ int get_engine_info(engine_info_t *engine_info)
 {
 	int fd, speed;
 
-	if ((fd = open("/sys/kernel/engine/motor_1", O_RDONLY)) < 0) {
+	if ((fd = open("/sys/kernel/engine/motor_1", O_RDONLY, 0777)) < 0) {
 		perror("fail to open motor_1");
 		return -1;
 	}
 
-	if (read(&speed, sizeof(speed), fd) < 0) {
+	if (read(fd, &speed, sizeof(int)) < 0) {
 		perror("fail to read motor_1 speed");
 		goto err;
 	}
@@ -210,12 +210,12 @@ int get_engine_info(engine_info_t *engine_info)
 	engine_info->motor_1_speed = speed;
 	close(fd);
 
-	if ((fd = open("/sys/kernel/engine/motor_2", O_RDONLY)) < 0) {
+	if ((fd = open("/sys/kernel/engine/motor_2", O_RDONLY, 0777)) < 0) {
 		perror("fail to open motor_2");
 		return -1;
 	}
 
-	if (read(&speed, sizeof(speed), fd) < 0) {
+	if (read(fd, &speed, sizeof(int)) < 0) {
 		perror("fail to read motor_2 speed");
 		goto err;
 	}
@@ -239,7 +239,7 @@ int get_system_info()
 	get_disk_info(&system_info.disk);
 	system_info.engine.motor_1_speed = 500;
 	system_info.engine.motor_2_speed = 500;
-	// get_engine_info(&system_info.engine);
+	get_engine_info(&system_info.engine);
 	return 0;
 }
 
