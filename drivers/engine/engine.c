@@ -140,7 +140,7 @@ static unsigned gpio_inputs_len = sizeof(gpio_inputs) / sizeof(int);
 
 int calibrate_ms(long ms)
 {
-	if (ms < 0 || ms > MOTOR_SPEED_MAX) return MOTOR_SPEED_BASE;
+	if (ms < 1 || ms > MOTOR_SPEED_MAX) return MOTOR_SPEED_BASE;
 	return (int)ms;
 }
 

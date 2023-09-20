@@ -36,7 +36,7 @@ int dump_file(const char *title, const char *path)
 	mtime = st.st_mtime;
 	strftime(timestamp, sizeof(timestamp), DATETIME_FORMAT, localtime(&mtime));
 
-	printf("------ %s (%s: %s) ------", title, path, timestamp);
+	printf("------ %s (%s: %s) ------\", title, path, timestamp);
 
 	while (1) {
 		nread = getline(&line, &len, fp);

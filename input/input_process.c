@@ -34,7 +34,7 @@
 
 #define MOSQ_HOST "192.168.31.182"
 #define MOSQ_PORT 1883
-#define MOSQ_TOPIC_MOTOR "motor"
+#define MOSQ_TOPIC_ENGINE "engine"
 
 #define MOTOR_1_SET_SPEED _IOW('w', '1', int32_t *)
 #define MOTOR_2_SET_SPEED _IOW('w', '2', int32_t *)
@@ -46,11 +46,6 @@ static pthread_t tids[THREAD_NUM];
 static sensor_info_t *bmp_info;
 struct mosquitto *mosq;
 static int bmp_shm_fd;
-
-struct motor_input {
-    int num;
-    int speed;
-};
 
 static void *(*thread_funcs[])(void *) = {
     command_thread,
@@ -134,7 +129,7 @@ int command_elf(char **argv)
             printf("[Command] empty file\n");
             goto err;
         }
-        printf("===========================");
+        printf("===========================\n");
         printf("File size: %ld\n", contents_len);
         map = (Elf64Hdr *)mmap(NULL, contents_len, PROT_READ, MAP_PRIVATE, fd, 0);
         printf("Object file type: %d\n", map->e_type);
@@ -142,7 +137,7 @@ int command_elf(char **argv)
         printf("Object file version: %d\n", map->e_version);
         printf("Entry point virtual address: %ld\n", map->e_entry);
         printf("Program header table file offset: %ld\n", map->e_phoff);
-        printf("===========================");
+        printf("===========================\n");
         munmap(map, contents_len);
     }
 
@@ -205,7 +200,7 @@ int command_set_motor_1_speed(char **argv)
 
     speed = atoi(argv[0]);
 
-    return set_motor_speed(MOTOR_1_SET_SPEED, speed);
+    return set_motor_speed(1, speed);
 }
 
 int command_set_motor_2_speed(char **argv)
@@ -218,7 +213,7 @@ int command_set_motor_2_speed(char **argv)
 
     speed = atoi(argv[0]);
 
-    return set_motor_speed(MOTOR_2_SET_SPEED, speed);
+    return set_motor_speed(2, speed);
 }
 
 int command_mincore(char **argv) {
@@ -305,7 +300,7 @@ int command_simple_io(char **argv)
 
 err:
     close(fd);
-    exit(1);
+    return 1;
 }
 
 int execute_command(char *command, char** argv) {
@@ -353,13 +348,11 @@ void mosq_connect_callback(struct mosquitto *msq, void *obj, int result)
 
 void mosq_message_callback(struct mosquitto *msq, void *obj, const struct mosquitto_message *mosq_msg)
 {
-    int retcode;
-    struct motor_input *motor_input;
+    int retcode, num, speed;
 
-    printf("[MOSQ] messaged\n");
-
-    motor_input = (struct motor_input *)mosq_msg->payload;
-    retcode = set_motor_speed(motor_input->num, motor_input->speed);
+    printf("[MOSQ] messaged\n", mosq_msg->payload, strlen(mosq_msg->payload));
+    sscanf(mosq_msg->payload, "{\"num\":%d,\"speed\":%d}", &num, &speed);
+    retcode = set_motor_speed(num, speed);
     if (retcode < 0) {
         perror("[MOSQ] fail to set motor speed");
     }
@@ -387,7 +380,7 @@ void *mosq_thread(void *args)
 
     mosquitto_connect_callback_set(mosq, mosq_connect_callback);
     mosquitto_message_callback_set(mosq, mosq_message_callback);
-    mosquitto_subscribe(mosq, NULL, MOSQ_TOPIC_MOTOR, 0);
+    mosquitto_subscribe(mosq, NULL, MOSQ_TOPIC_ENGINE, 0);
 
     while (1) {
         retcode = mosquitto_loop(mosq, -1, 1);

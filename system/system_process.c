@@ -99,8 +99,6 @@ int get_sys_info(system_info_t *sys_info)
 
 	sys_info->cores = cores;
 	strncpy(sys_info->name, model, strlen(model) + 1);
-	printf("model: %s\n", model);
-	printf("cores: %d\n", cores);
 
 	fclose(fp);
 	free(line);
@@ -195,32 +193,36 @@ int get_disk_info(disk_info_t *disk_info)
 
 int get_engine_info(engine_info_t *engine_info)
 {
-	int fd, speed;
+	int fd;
+	char buf[10];
 
 	if ((fd = open("/sys/kernel/engine/motor_1", O_RDONLY, 0777)) < 0) {
 		perror("fail to open motor_1");
 		return -1;
 	}
 
-	if (read(fd, &speed, sizeof(int)) < 0) {
+	if (read(fd, buf, sizeof(buf)) < 0) {
 		perror("fail to read motor_1 speed");
 		goto err;
 	}
 
-	engine_info->motor_1_speed = speed;
+	printf("motor_1 speed: %s\n", buf);
+	engine_info->motor_1_speed = atoi(buf);
 	close(fd);
+	memset(buf, '\0', sizeof(buf));
 
 	if ((fd = open("/sys/kernel/engine/motor_2", O_RDONLY, 0777)) < 0) {
 		perror("fail to open motor_2");
 		return -1;
 	}
 
-	if (read(fd, &speed, sizeof(int)) < 0) {
+	if (read(fd, buf, sizeof(int)) < 0) {
 		perror("fail to read motor_2 speed");
 		goto err;
 	}
 
-	engine_info->motor_2_speed = speed;
+	printf("motor_2 speed: %s\n", buf);
+	engine_info->motor_2_speed = atoi(buf);
 	close(fd);
 
 	return 0;
@@ -232,13 +234,10 @@ err:
 
 int get_system_info()
 {
-	printf("get_system_info\n");
 	get_sys_info(&system_info);
 	get_proc_info(&system_info.process);
 	get_mem_info(&system_info.memory);
 	get_disk_info(&system_info.disk);
-	system_info.engine.motor_1_speed = 500;
-	system_info.engine.motor_2_speed = 500;
 	get_engine_info(&system_info.engine);
 	return 0;
 }
@@ -356,7 +355,6 @@ void sigalrm_handler(int sig)
 	get_system_info();
 	stringify_system_info(buf);
 	retcode = mosquitto_publish(mosq, NULL, MOSQ_TOPIC_SYSTEM, strlen(buf), buf, 0, false);
-	printf("[Watchdog] mosquitto retcode: %d\n", retcode);
 	if (retcode) {
 		perror("[Watchdog] fail to publish topic");
 	}
